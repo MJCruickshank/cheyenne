@@ -1,0 +1,17 @@
+# Runtime data
+.cache/
+data/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# Editors and OS
+.DS_Store
+.vscode/
+.idea/
+.claude/
+
+# Local-only extras that are not published
+private/

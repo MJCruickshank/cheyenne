@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CHEYENNE // EO Tracking Board</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23010608'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%236ef2d6' stroke-width='2'/%3E%3Cpath d='M3 22 Q16 4 29 22' fill='none' stroke='%23ffb300' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="vendor/fonts/fonts.css">
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="css/board.css">
+</head>
+<body>
+<div id="globe" aria-label="Globe showing satellite positions, ground tracks and image footprints"></div>
+<div id="crt" aria-hidden="true"></div>
+
+<header id="topbar">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true"></div>
+    <div>
+      <h1>CHEYENNE</h1>
+      <div class="brand-sub">EARTH OBSERVATION TRACKING BOARD</div>
+    </div>
+  </div>
+
+  <div class="lamps" id="lamps" aria-label="Data link status"></div>
+
+  <form id="gazetteer" autocomplete="off">
+    <label for="gaz-input">LOCATE</label>
+    <input id="gaz-input" type="text" spellcheck="false" placeholder="PLACE NAME OR LAT, LON">
+    <div id="gaz-results" hidden></div>
+  </form>
+
+  <div class="clock" id="clock">
+    <div class="clock-main"><span id="clock-time">--:--:--</span><span class="clock-z">Z</span></div>
+    <div class="clock-sub"><span id="clock-date">-- --- ----</span> <span id="clock-mode" class="tag">LIVE</span></div>
+  </div>
+
+  <div class="timectl" role="group" aria-label="Simulation clock">
+    <button data-jump="-3600" title="Back one hour">-1H</button>
+    <button data-jump="-600" title="Back ten minutes">-10M</button>
+    <button id="btn-live" class="on" title="Return to real time">LIVE</button>
+    <button data-jump="600" title="Forward ten minutes">+10M</button>
+    <button data-jump="3600" title="Forward one hour">+1H</button>
+    <span class="sep"></span>
+    <button data-rate="1" class="on" title="Real time">1X</button>
+    <button data-rate="60" title="One minute per second">60X</button>
+    <button data-rate="600" title="Ten minutes per second">600X</button>
+  </div>
+
+  <div class="mapctl" role="group" aria-label="Board display">
+    <button id="btn-base-vector" class="on" title="Vector board">VECTOR</button>
+    <button id="btn-base-imagery" title="Satellite imagery basemap">IMAGERY</button>
+    <button id="btn-base-live" title="Newest imagery from the geostationary weather satellites">LIVE</button>
+    <select id="base-variant" aria-label="Basemap source" hidden></select>
+    <span class="sep"></span>
+    <button id="btn-grat" class="on" title="Latitude / longitude graticule">GRID</button>
+    <button id="btn-night" class="on" title="Day / night terminator">NIGHT</button>
+    <button id="btn-crt" class="on" title="Display scanlines">CRT</button>
+  </div>
+</header>
+
+<aside id="roster" class="panel" aria-label="Orbital assets and Intel">
+  <div class="panel-tabs" role="tablist">
+    <button id="tab-assets" class="on" role="tab" aria-controls="pane-assets">ORBITAL ASSETS <span id="roster-count" class="ct"></span></button>
+    <button id="tab-intel" role="tab" aria-controls="pane-intel" title="Telegram channel monitor">INTEL <span id="intel-badge" class="ct"></span></button>
+  </div>
+  <div class="pane" id="pane-assets" role="tabpanel">
+    <div class="panel-body" id="roster-body"></div>
+    <div class="overlays" id="firms-block" aria-label="Thermal detection overlay"></div>
+    <div class="panel-foot" id="roster-foot"></div>
+  </div>
+  <div class="pane" id="pane-intel" role="tabpanel" hidden>
+    <div id="intel-head"></div>
+    <div class="tabs" id="intel-tabs"></div>
+    <div class="panel-body" id="intel-body"></div>
+    <div class="panel-foot" id="intel-foot"></div>
+  </div>
+</aside>
+
+<aside id="mission" class="panel" aria-label="Selected constellation" hidden>
+  <div class="panel-head"><span id="mission-title">MISSION</span><button id="mission-close" class="x" title="Deselect constellation">X</button></div>
+  <div class="panel-body" id="mission-body"></div>
+</aside>
+
+<section id="satcard" class="panel" aria-label="Selected satellite" hidden></section>
+
+<footer id="bottombar">
+  <div class="readout" id="readout">
+    <div><span class="k">CURSOR</span><span id="ro-cursor">---</span></div>
+    <div><span class="k">AOI</span><span id="ro-aoi">GLOBAL</span></div>
+    <div><span class="k">BASE</span><span id="ro-base">VECTOR BOARD</span></div>
+    <div><span class="k">TRACKS</span><span id="ro-tracks">0</span></div>
+  </div>
+  <div id="timeline" aria-label="Acquisition timeline">
+    <canvas id="timeline-canvas"></canvas>
+    <div id="timeline-empty">SELECT A CONSTELLATION TO PLOT ACQUISITIONS</div>
+  </div>
+  <div class="credits" id="credits"></div>
+</footer>
+
+<div id="tooltip" hidden></div>
+<div id="picker" class="panel" hidden></div>
+<div id="toasts" aria-live="polite"></div>
+<div id="alerts" aria-live="assertive"></div>
+
+<div id="boot">
+  <div class="boot-box">
+    <div class="boot-title">CHEYENNE</div>
+    <div class="boot-sub">EARTH OBSERVATION TRACKING BOARD</div>
+    <pre id="boot-log"></pre>
+  </div>
+</div>
+
+<script src="vendor/maplibre-gl.js"></script>
+<script src="vendor/satellite.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

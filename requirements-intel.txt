@@ -1,0 +1,2 @@
+# Optional: only needed for place extraction in the Intel tab (Python 3.10+).
+anthropic>=2.8
