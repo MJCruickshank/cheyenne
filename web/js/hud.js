@@ -8,6 +8,7 @@ const LAMPS = [
   ['tasking', 'TASKING'],
   ['imagery', 'IMAGERY'],
   ['intel', 'INTEL'],
+  ['ais', 'AIS'],
 ];
 
 export function initLamps() {

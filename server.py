@@ -13,6 +13,7 @@ small JSON API that does the things a browser cannot do politely or at all:
   /api/firms      NASA FIRMS active-fire detections as GeoJSON (add meta=1 for counts)
   /api/geo        timestamps of the newest geostationary weather-satellite frames
   /api/intel      Telegram channel monitor: posts placed on the map (see intel.py)
+  /api/ais        live ship positions from aisstream.io (see ais.py)
 
 Run:  python3 server.py [--port 8642] [--host 127.0.0.1]
 """
@@ -38,6 +39,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
+import ais
 import intel
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -537,6 +539,7 @@ def geo_times():
 
 SAFE_ID = re.compile(r"^[A-Za-z0-9_.\-]+$")
 INTEL = None            # intel.Intel, created in main()
+AIS = None              # ais.AIS, created in main()
 
 
 def signed_asset(collection, item, asset):
@@ -622,7 +625,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         url = urllib.parse.urlparse(self.path)
         try:
-            if url.path != "/api/intel":
+            if url.path not in ("/api/intel", "/api/ais"):
                 return self.send_json({"error": "not found"}, 404)
             if not self.same_site() or "application/json" not in self.headers.get("Content-Type", ""):
                 return self.send_json({"error": "forbidden"}, 403)
@@ -632,6 +635,11 @@ class Handler(SimpleHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             if not isinstance(body, dict):
                 raise ValueError("bad request")
+            if url.path == "/api/ais":
+                if body.get("action") != "stop":
+                    raise ValueError("unknown action")
+                AIS.stop()
+                return self.send_json({"ok": True})
             return self.send_json(INTEL.command(body))
         except (ValueError, KeyError, TypeError) as e:
             return self.send_json({"error": str(e) or "bad request"}, 400)
@@ -651,6 +659,26 @@ class Handler(SimpleHTTPRequestHandler):
                 if url.path == "/api/intel/post":
                     return self.send_json(INTEL.post_text(q.get("k", "")))
                 return self.send_json(INTEL.snapshot(int(q.get("since", "0")), watching=not q.get("peek")))
+            if url.path.startswith("/api/ais"):
+                if not self.same_site():
+                    return self.send_json({"error": "forbidden"}, 403)
+                if url.path == "/api/ais/ship":
+                    return self.send_json(AIS.ship(int(q.get("mmsi", "0"))))
+                if url.path == "/api/ais/coverage":
+                    return self.send_json(AIS.coverage())
+                box = view = None
+                for name in ("bbox", "view"):
+                    if name in q:
+                        vals = [float(v) for v in q[name].split(",")]
+                        if len(vals) != 4 or not all(math.isfinite(v) for v in vals):
+                            raise ValueError("%s must be west,south,east,north" % name)
+                        if name == "bbox":
+                            box = vals
+                        else:
+                            view = vals
+                if q.get("meta"):
+                    return self.send_json(AIS.meta(box, view))
+                return self.send_bytes(AIS.geojson(box, view), "application/geo+json")
             if url.path == "/api/status":
                 tle = os.path.join(CACHE, "tle-active.txt")
                 return self.send_json({
@@ -713,8 +741,9 @@ def main():
     ap.add_argument("--intel-budget", type=float, default=0.65, metavar="USD",
                     help="default daily spending cap for Intel place extraction (default: 0.65)")
     args = ap.parse_args()
-    global INTEL
+    global INTEL, AIS
     INTEL = intel.Intel(ROOT, CACHE, http_get, log, ssl_context=SSL_CTX, daily_budget=args.intel_budget)
+    AIS = ais.AIS(ROOT, log, ssl_context=SSL_CTX)
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     httpd.daemon_threads = True
     print("CHEYENNE tracking board  ->  http://%s:%d/   (Ctrl-C to stand down)" % (

@@ -3,8 +3,8 @@
 An earth-observation tracking board for open-source investigators of conflict, humanitarian
 crises and natural disasters. An interactive globe shows where imaging satellites are right now,
 what they have already imaged over a place, and what they are scheduled to image next. Free
-imagery can be drawn on the globe or saved to disk, and live fire detections, weather imagery and
-Telegram reports can be laid over the same map.
+imagery can be drawn on the globe or saved to disk, and live fire detections, ship positions,
+weather imagery and Telegram reports can be laid over the same map.
 
 ![The board with Sentinel-2 selected: ground tracks, sensor swaths and the week's planned acquisitions](docs/screenshots/overview.png)
 
@@ -16,6 +16,7 @@ and the core features need no accounts or API keys.
 - [Features](#features)
 - [Installation](#installation)
 - [Using the board](#using-the-board)
+- [AIS: ship tracking](#ais-ship-tracking)
 - [Intel: Telegram monitor](#intel-telegram-monitor)
 - [Data sources](#data-sources)
 - [Limitations](#limitations)
@@ -40,6 +41,9 @@ and the core features need no accounts or API keys.
 - **Downloads.** Individual bands as cloud-optimised GeoTIFF, or the current rendering as a PNG.
 - **Fire detections.** NASA FIRMS near-real-time thermal detections for the last 24 hours,
   48 hours or 7 days.
+- **Ship tracking.** Live AIS positions merged from four free feeds (aisstream.io, Fintraffic,
+  Open Waters and Pelyr), coloured by ship type, with each ship's details and recent track, and a
+  map of where free AIS coverage actually exists.
 - **Live weather view.** The newest full-disc imagery from the geostationary weather satellites,
   draped on the globe and refreshed every five minutes.
 - **Basemaps.** A vector board, or the Esri World Imagery satellite mosaic.
@@ -56,19 +60,20 @@ and the core features need no accounts or API keys.
 
 ### Requirements
 
-- Python 3.9 or newer (3.10 or newer for the optional Intel place extraction)
+- Python 3.9 or newer (3.10 or newer for the optional extras)
 - A current desktop browser with WebGL (Chrome, Edge, Firefox or Safari)
 - An internet connection, for orbital elements, map tiles and imagery
 
 ### Get the code and run it
 
 ```sh
-git clone https://github.com/<your-username>/cheyenne.git
+git clone https://github.com/MJCruickshank/cheyenne.git
 cd cheyenne
 ./run.sh
 ```
 
-Then open <http://localhost:8642/>. On Windows, run `python server.py` instead of `./run.sh`.
+Then open <http://localhost:8642/>. On Windows, run `python server.py` instead of `./run.sh`
+(or `.venv\Scripts\python server.py` once you have installed the optional extras).
 
 Options:
 
@@ -78,21 +83,43 @@ Options:
 | `--host` | `127.0.0.1` | Interface to bind. `0.0.0.0` exposes the board to your network |
 | `--intel-budget` | `0.65` | Default daily spending cap, in US dollars, for Intel place extraction |
 
-### Optional: place extraction for the Intel tab
+### Optional extras
 
-Everything except one step works with Python alone. The Intel tab uses a small Claude model
-(`claude-haiku-5-5`) to work out where each Telegram post is about, which needs Anthropic's
-Python library and an Anthropic API login:
+The core board works with Python alone. Two features need a Python package and a free account:
+
+| Feature | Package | Account |
+| --- | --- | --- |
+| AIS ship tracking | `websockets` (every feed except Fintraffic, which works without it) | None for Fintraffic and Open Waters. Optional free keys for the other feeds (below) |
+| Intel place extraction | `anthropic` | An Anthropic API login (`ant auth login`) or `ANTHROPIC_API_KEY` |
+
+AIS keys, all optional, read from environment variables when the server starts:
+
+| Variable | Feed | How to get it |
+| --- | --- | --- |
+| `AISSTREAM_API_KEY` | aisstream.io, the only whole-globe feed | Sign in at [aisstream.io](https://aisstream.io) with GitHub and create a key |
+| `OPENWATERS_TOKEN` | Open Waters (raises its limits; works without) | [openwaters.io/ais/token](https://openwaters.io/ais/token/), free, no account |
+| `PELYR_API_KEY` | Pelyr | Sign in at [dashboard.pelyr.com](https://dashboard.pelyr.com/stream); the key needs the `stream` capability |
+
+Install both packages into a project environment:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/pip install -r requirements-intel.txt
-ant auth login          # Anthropic's command-line tool; or set ANTHROPIC_API_KEY instead
+.venv/bin/pip install -r requirements.txt
 ```
 
 `./run.sh` uses `.venv` automatically when it exists. If you start the server another way, use
-`.venv/bin/python server.py`. Without this step the Intel tab still lists posts, but only those
-containing written coordinates are placed on the map.
+`.venv/bin/python server.py`.
+
+To store a key on macOS or Linux (zsh shown; use `~/.bashrc` for bash), run this, paste the key
+when asked, then open a new terminal. Change the variable name for the other keys:
+
+```sh
+read -s "KEY?Paste key: " && echo "export AISSTREAM_API_KEY='$KEY'" >> ~/.zshrc && unset KEY
+```
+
+The server reads keys when it starts, so start it from a terminal that has them set.
+Without the Anthropic login, the Intel tab still lists posts, but only those containing written
+coordinates are placed on the map.
 
 ## Using the board
 
@@ -128,6 +155,61 @@ Other controls:
 | `PLANNED` | ESA acquisition plans for Sentinel-1 and Sentinel-2 | The operator's published schedule. Revised without notice. |
 | `PREDICTED` (Landsat and other fixed-swath sensors) | Computed from current orbital elements and swath width | Good for about a week; Landsat images all daylit land. |
 | `PREDICTED` (commercial, steerable sensors) | Same computation, using the sensor's pointing range | Opportunity only. Whether the operator is tasking the area is not public. |
+
+## AIS: ship tracking
+
+![Live AIS positions off the Netherlands with one ship's details open](docs/screenshots/ais.png)
+
+The `AIS SHIPPING` lamp under the fleet list shows ships reporting their position over AIS, the
+radio transponder system commercial ships are required to carry. While it is on, the server
+merges four free feeds into one picture. A ship heard by several feeds appears once, and an older
+report from a slower feed never overwrites a newer one.
+
+| Feed | Area | Key | How it is used |
+| --- | --- | --- | --- |
+| [aisstream.io](https://aisstream.io) | Whole globe, volunteer shore receivers | `AISSTREAM_API_KEY` | One live connection for the whole globe, about 90 messages a second |
+| [Fintraffic Digitraffic](https://www.digitraffic.fi/en/marine-traffic/) | Finnish waters: Gulf of Finland, Archipelago Sea, Gulf of Bothnia | None | Polled once a minute, plus ship details every 10 minutes |
+| [Open Waters AIS](https://openwaters.io/ais/) | Strongest in Norway (the official BarentsWatch feed) and the Nordics; also relays Fintraffic, AISHub, aisstream and volunteer stations | None (`OPENWATERS_TOKEN` optional) | Follows the board's view, because it cannot take the whole globe |
+| [Pelyr](https://pelyr.com) | Community stations and third-party feeds; no coverage table published | `PELYR_API_KEY` | Follows the board's view, like Open Waters |
+
+The panel lists each feed with its state and message rate, and the credits each feed requires.
+Feeds that follow the view cover only part of it when you are zoomed out (100 square degrees for
+Open Waters without a token, 400 with one, and 3.5 million km² for Pelyr's free plan), centred on
+the middle of the screen. The panel says when that is happening.
+
+- **Ships.** Icons point the way each ship is heading and are coloured by type: cargo, tanker,
+  passenger, fishing, military and law enforcement, tug and service, leisure, and other. Ships
+  appear as they report: moving ones within seconds, moored ones within a few minutes. Ship types
+  and names arrive in a separate message every six minutes, so icons stay grey until then.
+  Ships not heard for an hour are dropped.
+- **A ship.** Click one for its name, MMSI, IMO, call sign, flag (from the MMSI), type, status,
+  speed, destination, size and draught, which feeds heard it, and the track this board has
+  recorded over the last six hours. `DESIGNATE FOCUS` searches imagery of the ship's position.
+- **Coverage.** `COVERAGE` shades 0.5° cells by how many reports per hour this board has received
+  there, from all feeds. It keeps accumulating across sessions in `data/ais-coverage.json`, so it
+  becomes more reliable the longer you run it. Places covered only by a view-following feed show up
+  once you have looked at them.
+- **Filters.** `MOVING` hides ships at anchor or moored; the type icons hide or show each type.
+
+![Free AIS coverage recorded over 26 minutes: dense along Europe's coasts, almost none in the Black Sea, Red Sea or Persian Gulf](docs/screenshots/ais-coverage.png)
+
+What to expect:
+
+- **Coverage is coastal and uneven.** All four feeds rely on shore receivers, which hear ships out
+  to roughly 15 to 40 nautical miles. Northern Europe, the Mediterranean's northern shore and North
+  America are well covered, and Finland and Norway best of all thanks to their official feeds. The
+  Black Sea, Red Sea, Persian Gulf and Arabian Sea have little or none, and the open ocean has
+  none. Outside the Nordics, Open Waters mostly relays what aisstream already provides.
+- **Positions and identities are self-reported.** GPS jamming and spoofing are common in conflict
+  areas, so ships can report false positions. Warships rarely broadcast AIS, and some ships switch
+  it off or broadcast a false identity. A ship missing from the map proves nothing.
+- **No history.** The board only knows what it has heard since it was switched on.
+- **Terms.** None of the feeds offers an uptime guarantee, and aisstream and Pelyr do not allow
+  browsers to connect directly, which is why the server merges the data. Open Waters and Pelyr are
+  free for personal, non-commercial use only. Pelyr's terms forbid proxying its service to third
+  parties and require its credit wherever the data is shown, so only run the board with your Pelyr
+  key for yourself, not as a shared server. Fintraffic's data is CC BY 4.0 and Norway's is NLOD 2.0;
+  the panel shows the credits each requires.
 
 ## Intel: Telegram monitor
 
@@ -190,11 +272,12 @@ Cost, limits and privacy:
 | Vector basemap | OpenFreeMap (OpenMapTiles schema, OpenStreetMap data) |
 | Imagery basemap | Esri World Imagery |
 | Place search | OpenStreetMap Nominatim |
+| Ship positions | aisstream.io (free key); Fintraffic Digitraffic (CC BY 4.0, no key); Open Waters AIS, including BarentsWatch and the Norwegian Coastal Administration (NLOD 2.0) and AISHub (no key); Pelyr (free key, Pelyr Data Licence 2.0) |
 | Intel posts | Public Telegram channel previews (`t.me/s/<channel>`) |
 | Intel place names | GeoNames (CC BY 4.0): every place in 20 countries around the two conflicts, towns over 500 people elsewhere |
 | Intel place extraction | Anthropic API, `claude-haiku-5-5` (optional; needs a login or API key) |
 
-No accounts or API keys are needed for any of these except Intel place extraction.
+No accounts or API keys are needed for any of these except Intel place extraction and some of the ship feeds.
 
 ## Limitations
 
@@ -213,8 +296,9 @@ No accounts or API keys are needed for any of these except Intel place extractio
 ```
 server.py              Local server: static files plus /api (TLE cache, plan parser, FIRMS cache, download proxy)
 intel.py               Intel: Telegram reader, post database, gazetteer, place extraction
+ais.py                 AIS: the four ship feeds, merged ship state, tracks and coverage counts
 run.sh                 Starts the server, using .venv when present
-requirements-intel.txt Optional dependency for Intel place extraction
+requirements.txt       Optional packages for the AIS and Intel features
 web/catalog.json       Fleets: name patterns, sensor geometry, archive collection, colours
 web/js/                Front end as plain ES modules (no bundler)
   main.js                boot and wiring
@@ -225,6 +309,7 @@ web/js/                Front end as plain ES modules (no bundler)
   board.js               per-frame plotting                      timeline.js  bottom timeline
   firms.js               fire-detection overlay                  live.js      geostationary live view
   intel.js               Intel tab, report markers, cards and alerts
+  ais.js                 ship layer, ship card and coverage map
 web/vendor/            MapLibre GL JS 5, satellite.js 5, fonts and their licences (no CDN at runtime)
 docs/screenshots/      Images used in this README
 ```
@@ -233,8 +318,8 @@ Created at runtime and ignored by git:
 
 ```
 .cache/                Downloaded elements, plans, fire files and the gazetteer (safe to delete)
-data/                  Intel channel list and stored posts
-.venv/                 Optional Python environment for Intel place extraction
+data/                  Intel channel list and stored posts; AIS coverage counts
+.venv/                 Optional Python environment for the AIS and Intel features
 ```
 
 Extending it:
@@ -262,4 +347,8 @@ Cheyenne bundles these third-party components; their licence texts are in
 
 Data is provided by CelesTrak, ESA and the Copernicus programme, USGS, the Microsoft Planetary
 Computer, NASA (GIBS and FIRMS), NOAA, EUMETSAT, OpenFreeMap and OpenStreetMap contributors,
-Esri, and GeoNames. Each provider's own terms apply to its data.
+Esri, GeoNames, aisstream.io, Fintraffic, Open Waters, BarentsWatch and the Norwegian Coastal
+Administration (Kystverket), and Pelyr. Each provider's own terms apply to its data; the board
+shows the credits each AIS feed requires while that feed is in use.
+
+Cheyenne is not affiliated with or endorsed by any of these providers, or by Telegram or Anthropic.

@@ -9,6 +9,7 @@ import { initTimeline } from './timeline.js';
 import { initUI } from './ui.js';
 import { initFirms, setFirms, firms } from './firms.js';
 import { initIntel, intel } from './intel.js';
+import { initAis, setAis, ais } from './ais.js';
 import { IMAGERY } from './basemap.js';
 import { LIVE } from './live.js';
 import { currentAOI } from './archive.js';
@@ -27,7 +28,7 @@ function readHash() {
   const day = (k) => (/^\d{4}-\d{2}-\d{2}$/.test(q.get(k) || '') ? q.get(k) : null);
   return {
     ll: nums('ll', 2), z: nums('z', 1), tgt: nums('tgt', 2), c: q.get('c'), bm: q.get('bm'),
-    past: nums('past', 1), ahead: nums('ahead', 1), from: day('from'), to: day('to'), fire: q.get('fire'),
+    past: nums('past', 1), ahead: nums('ahead', 1), from: day('from'), to: day('to'), fire: q.get('fire'), ais: q.get('ais'),
   };
 }
 
@@ -44,6 +45,7 @@ function writeHash() {
     if (S.basemap === 'imagery') q.set('bm', S.imagery);
     if (S.basemap === 'live') q.set('bm', `live-${S.live}`);
     if (firms.on) q.set('fire', firms.src === 'all' ? firms.win : `${firms.win}-${firms.src}`);
+    if (ais.on) q.set('ais', `${ais.ships ? 's' : ''}${ais.cov ? 'c' : ''}` || 'on');
     if (S.custom && S.from && S.to) { q.set('from', S.from); q.set('to', S.to); } else if (S.pastDays !== 7) q.set('past', S.pastDays);
     if (S.futureDays !== 7) q.set('ahead', S.futureDays);
     history.replaceState(null, '', `#${q.toString().replace(/%2C/g, ',')}`);
@@ -84,6 +86,7 @@ async function boot() {
   initMission();
   initTimeline();
   initFirms();
+  initAis();
   initUI();
   initIntel();
 
@@ -95,6 +98,7 @@ async function boot() {
   on('active', () => { plotAOI(null); writeHash(); });
   on('basemap', writeHash);
   on('firms', writeHash);
+  on('ais', writeHash);
   on('results', () => { plotAOI(S.resultMeta.aoi); writeHash(); });
   map.on('moveend', writeHash);
 
@@ -109,6 +113,7 @@ async function boot() {
     const [win, src] = hash.fire.split('-');
     if (['24h', '48h', '7d'].includes(win)) setFirms({ on: true, win, src: ['viirs', 'modis'].includes(src) ? src : 'all' });
   }
+  if (hash.ais) setAis({ on: true, ships: hash.ais.includes('s'), cov: hash.ais.includes('c') });
   if (hash.tgt) { S.target = hash.tgt; S.aoiMode = 'target'; emit('aoi'); }
   if (hash.c && S.cons.has(hash.c)) setActive(hash.c);
 
@@ -117,7 +122,7 @@ async function boot() {
   if (fleetResult) toast('NO ORBITAL ELEMENTS: SATELLITE PLOTS OFFLINE', true, 6000);
 
   // Handy for debugging from the console.
-  window.cheyenne = { S, map, fleet, clock, setActive, setTarget, invalidate, intel };
+  window.cheyenne = { S, map, fleet, clock, setActive, setTarget, invalidate, intel, ais };
 }
 
 boot().catch((e) => {

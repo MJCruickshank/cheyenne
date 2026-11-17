@@ -11,6 +11,7 @@ import { setActive, setTarget, hoverRecord, selectRecord } from './mission.js';
 import { currentAOI } from './archive.js';
 import { showTip, hideTip, placePicker, closePicker } from './hud.js';
 import { intelAt, describeSite, openSite } from './intel.js';
+import { shipAt, describeShip, openShip, clearShip } from './ais.js';
 import { $, h, hms, dmy, stamp, tRel, fmtLat, fmtLon, fmtPos, parseCoords, pointInGeom, getJSON, toast, DAY } from './util.js';
 
 // ---------------------------------------------------------------- top bar
@@ -289,6 +290,14 @@ function initPointer() {
         showTip(x, y, d.title, d.sub);
         return;
       }
+      const ship = S.designating ? null : shipAt(ev.point);
+      if (ship) {
+        const d = describeShip(ship);
+        map.getCanvas().style.cursor = 'pointer';
+        hoverRecord(null);
+        showTip(x, y, d.title, d.sub);
+        return;
+      }
       const fire = S.designating ? null : fireAt(ev.point);
       if (fire) {
         const d = describeFire(fire);
@@ -319,6 +328,9 @@ function initPointer() {
     if (sat) { pickSat(sat.id); return; }
     const site = intelAt(e.point);
     if (site) { openSite(site.properties.id, e.originalEvent.clientX, e.originalEvent.clientY); return; }
+    const ship = shipAt(e.point);
+    if (ship) { openShip(ship.properties.m, e.originalEvent.clientX, e.originalEvent.clientY); return; }
+    clearShip();
     const fire = fireAt(e.point);
     if (fire) { openFireCard(fire, e.originalEvent.clientX, e.originalEvent.clientY); return; }
     const recs = footprintsAt(e.lngLat);
@@ -355,6 +367,6 @@ export function initUI() {
   paintAoiReadout();
   $('#credits').replaceChildren(
     'Orbits: CelesTrak. Scenes: Microsoft Planetary Computer (Copernicus Sentinel, USGS Landsat). Tasking: ESA. ',
-    'Mosaics and live view: NASA GIBS, NOAA, EUMETSAT. Fires: NASA FIRMS. Intel: public Telegram channels; places: GeoNames. ',
+    'Mosaics and live view: NASA GIBS, NOAA, EUMETSAT. Fires: NASA FIRMS. Ships: aisstream.io, Fintraffic / digitraffic.fi (CC BY 4.0), Open Waters AIS, Pelyr (see AIS panel). Intel: public Telegram channels; places: GeoNames. ',
     'Basemap: OpenFreeMap © OpenStreetMap; imagery © Esri.');
 }

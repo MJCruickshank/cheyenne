@@ -240,6 +240,18 @@ input[type=range]::-moz-range-thumb { width: 8px; height: 14px; background: var(
 .ov-note { margin-top: 6px; font-size: 10px; color: var(--ink-dim); }
 .ov-note.amber { color: var(--amber); }
 .ov-note.red { color: var(--red); }
+#ais-block .i-cats button { padding: 2px; }
+#ais-block .ctl { grid-template-columns: 40px 1fr; }
+.ais-src { margin-top: 5px; display: grid; gap: 1px; }
+.ais-src .src { display: grid; grid-template-columns: 8px 86px 1fr; gap: 6px; align-items: center; font-size: 9.5px; color: var(--ink-dim); }
+.ais-src .src i { width: 6px; height: 6px; background: var(--ink-faint); }
+.ais-src .src.ok i { background: var(--ink); box-shadow: 0 0 5px var(--ink); }
+.ais-src .src.wait i { background: var(--amber); }
+.ais-src .src.bad i { background: var(--red); }
+.ais-src .src .nm { color: var(--ink); }
+.ais-src .src .st { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ais-src .src.off .st, .ais-src .src.bad .st { color: var(--ink-faint); }
+.ov-note.attrib { font-size: 8.5px; text-transform: none; letter-spacing: 0.01em; color: var(--ink-faint); line-height: 1.35; }
 
 /* ------------------------------------------------------------------ intel tab */
 
