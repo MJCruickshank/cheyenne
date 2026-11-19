@@ -92,20 +92,22 @@
       "links": [{ "label": "COPERNICUS BROWSER", "url": "https://browser.dataspace.copernicus.eu/" }]
     },
     {
-      "id": "nisar", "name": "NISAR", "group": "opentrack", "operator": "NASA / ISRO",
+      "id": "nisar", "name": "NISAR", "group": "open", "operator": "NASA / ISRO",
       "sensor": "sar", "instrument": "L-BAND + S-BAND SAR", "gsd": "3-10 M", "revisit": "12 D",
       "color": "#ff9ec4", "match": ["^NISAR$"], "defaultVisible": true,
-      "access": "OPEN VIA ALASKA SATELLITE FACILITY (EARTHDATA LOGIN)",
+      "access": "OPEN. GEOCODED L-BAND BACKSCATTER (GCOV) VIA THE ALASKA SATELLITE FACILITY; BROWSE IMAGES FREE, FULL PRODUCTS NEED A FREE EARTHDATA LOGIN",
+      "archive": { "provider": "asf", "cloud": false, "minzoom": 4, "maxzoom": 11 },
       "geom": { "mode": "side", "side": "left", "nearKm": 425, "farKm": 680, "swathKm": 240, "daylight": false },
-      "links": [{ "label": "ASF VERTEX SEARCH", "url": "https://search.asf.alaska.edu/" }]
+      "links": [{ "label": "ASF VERTEX SEARCH", "url": "https://search.asf.alaska.edu/" }, { "label": "NISAR DATA USER GUIDE", "url": "https://nisar-docs.asf.alaska.edu/" }]
     },
     {
-      "id": "maxar", "name": "MAXAR WORLDVIEW / LEGION", "group": "vhr", "operator": "VANTOR (MAXAR)",
+      "id": "maxar", "name": "VANTOR WORLDVIEW / LEGION", "group": "vhr", "operator": "VANTOR (FORMERLY MAXAR)",
       "sensor": "optical", "instrument": "PAN + MULTISPECTRAL VHR", "gsd": "0.3-0.5 M", "revisit": "INTRADAY (TASKED)",
       "color": "#f4f1de", "match": ["^WORLDVIEW-\\d", "^GEOEYE 1$", "^LEGION \\d"], "defaultVisible": true,
-      "access": "COMMERCIAL. FREE RELEASES FOR MAJOR DISASTERS VIA OPEN DATA PROGRAM",
+      "access": "COMMERCIAL. FREE 30-60 CM IMAGERY OF MAJOR DISASTERS IS RELEASED THROUGH THE VANTOR OPEN DATA PROGRAM (AND THE MAXAR ARCHIVE BEFORE IT), CC BY-NC 4.0",
+      "archive": { "provider": "opendata", "sources": ["vantor", "maxar"], "cloud": false, "minzoom": 8 },
       "geom": { "mode": "agile", "swathKm": 14, "reachKm": 600, "daylight": true },
-      "links": [{ "label": "MAXAR OPEN DATA PROGRAM", "url": "https://www.maxar.com/open-data" }]
+      "links": [{ "label": "VANTOR OPEN DATA ON AWS", "url": "https://registry.opendata.aws/vantor-open-data/" }, { "label": "MAXAR OPEN DATA ARCHIVE", "url": "https://registry.opendata.aws/maxar-open-data/" }]
     },
     {
       "id": "airbus", "name": "AIRBUS PLEIADES / SPOT", "group": "vhr", "operator": "AIRBUS DEFENCE & SPACE",
@@ -122,9 +124,10 @@
       "id": "planet", "name": "PLANET SKYSAT / PELICAN", "group": "vhr", "operator": "PLANET LABS",
       "sensor": "optical", "instrument": "FRAME VHR + VIDEO", "gsd": "0.3-0.5 M", "revisit": "INTRADAY (TASKED)",
       "color": "#9fe8ff", "match": ["^SKYSAT", "^PELICAN"], "defaultVisible": false,
-      "access": "COMMERCIAL. SELECTED DISASTER DATA RELEASED TO RESPONDERS",
+      "access": "COMMERCIAL. SELECTED DISASTER IMAGERY (SKYSAT, PELICAN AND PLANETSCOPE) IS RELEASED THROUGH THE CRISIS RESPONSE PROGRAM, CC BY-NC 4.0",
+      "archive": { "provider": "opendata", "sources": ["planet"], "cloud": false, "minzoom": 8 },
       "geom": { "mode": "agile", "swathKm": 8, "reachKm": 300, "daylight": true },
-      "links": [{ "label": "PLANET DISASTER DATA", "url": "https://www.planet.com/disasterdata/" }]
+      "links": [{ "label": "PLANET DISASTER DATA", "url": "https://www.planet.com/disasterdata/" }, { "label": "RELEASES ON SOURCE COOPERATIVE", "url": "https://source.coop/planet/disasterdata" }]
     },
     {
       "id": "blacksky", "name": "BLACKSKY GLOBAL", "group": "vhr", "operator": "BLACKSKY",

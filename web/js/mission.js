@@ -5,8 +5,10 @@ import { S, on, emit, clock } from './state.js';
 import { map, showRaster, hideRaster, setRasterOpacity, fitTo, syncPadding } from './globe.js';
 import { fleet } from './tracker.js';
 import { live } from './board.js';
-import { currentAOI, aoiCentre, searchScenes, fetchPlans, predictAccess, fetchItem, BOX_ZOOM } from './archive.js';
-import { presetsFor, QUALITY, tileTemplate, quicklookUrl, exportUrl, downloadUrl, gibsTemplate, primaryAssets, PC } from './viz.js';
+import { currentAOI, aoiCentre, searchScenes, fetchPlans, predictAccess, fetchItem, eventName, nisarBounds, BOX_ZOOM } from './archive.js';
+import { presetsFor, QUALITY, tileTemplate, quicklookUrl, exportUrl, downloadUrl, gibsTemplate, primaryAssets, PC, PC_COLLECTIONS } from './viz.js';
+import { registerRaster, unregisterRaster, zoomForGsd } from './cog.js';
+import { timelapseSection } from './timelapse.js';
 import { setLamp } from './hud.js';
 import { $, h, DAY, stamp, dtg, tRel, fmtPos, fmtLat, fmtLon, isoDay, toast } from './util.js';
 
@@ -67,7 +69,7 @@ export function selectRecord(id, { fly = true } = {}) {
       const r = S.rendered.get(rec.id);
       detail.vizId = r ? r.vizId : (presetsFor(rec.collection, rec.props)[0] || {}).id;
       if (r) { detail.quality = r.quality; detail.opacity = r.opacity; }
-      fetchItem(rec).then((item) => {
+      if (PC_COLLECTIONS.has(rec.collection)) fetchItem(rec).then((item) => {
         if (detail.itemFor === rec.id) { detail.item = item; if (view === 'detail') render(); }
       }).catch((e) => {
         if (detail.itemFor === rec.id) { detail.itemErr = e.message; if (view === 'detail') render(); }
@@ -109,14 +111,26 @@ export async function scan() {
   emit('aoi');
   render();
 
+  const releases = c.archive && c.archive.provider === 'opendata';
   if (c.archive) {
-    if (wide) {
+    if (wide && !releases) {
       meta.notes.push({ cls: 'warn', text: 'WIDE VIEW. ARCHIVE SCENES NEED AN AREA: ZOOM IN OR DESIGNATE A FOCUS. SHOWING GLOBAL TASKING ONLY.' });
       setLamp('archive', '');
     } else {
       setLamp('archive', 'busy');
       jobs.push(searchScenes(c, aoi, from, until, S.cloudMax, signal).then((r) => {
         found.push(...r.records);
+        if (r.events) meta.events = r.events;
+        if (r.sources) {
+          meta.sources = r.sources;
+          const pending = r.sources.filter((s) => s.busy || (!s.ready && !s.error));
+          if (pending.length) {
+            meta.notes.push({ cls: 'warn', text: `INDEXING ${pending.map((s) => s.label).join(' AND ')}${pending.some((s) => s.note) ? ` (${pending.map((s) => s.note).filter(Boolean).join(', ')})` : ''}. THE LIST WILL UPDATE BY ITSELF.` });
+            setTimeout(() => { if (S.active === c.id && !busy && view === 'main') scan(); }, 6000);
+          }
+          for (const s of r.sources) if (s.error) meta.notes.push({ cls: 'err', text: `${s.label} UNAVAILABLE: ${s.error}` });
+        }
+        if (releases && !wide) meta.notes.push({ cls: '', text: 'FREE RELEASES FROM ALL DATES ARE SHOWN; THE LOOKBACK DOES NOT APPLY.' });
         if (r.truncated) meta.notes.push({ cls: 'warn', text: `SHOWING THE ${r.records.length} MOST RECENT SCENES. NARROW THE AREA OR LOOKBACK FOR THE REST.` });
         setLamp('archive', 'ok');
       }).catch((e) => {
@@ -160,6 +174,10 @@ export async function scan() {
   await Promise.all(jobs);
   if (signal.aborted) return;
   busy = false; progress = null;
+  if (releases) {                       // stretch the timeline back over the released scenes
+    const times = found.filter((r) => r.kind === 'scene' && r.time).map((r) => r.time);
+    if (times.length) meta.t0 = Math.min(meta.t0, Math.min(...times) - DAY);
+  }
   const keepSel = S.selected && (found.some((r) => r.id === S.selected) || S.rendered.has(S.selected));
   S.results = found;
   S.resultMeta = meta;
@@ -173,18 +191,41 @@ export async function scan() {
 
 // ---------------------------------------------------------------- rendering scenes on the board
 
-function applyRender(id) {
+async function applyRender(id) {
   const r = S.rendered.get(id);
   if (!r) return;
-  const c = S.cons.get(r.rec.cid);
-  const preset = presetsFor(r.rec.collection, r.rec.props).find((p) => p.id === r.vizId);
+  const rec = r.rec;
+  const c = S.cons.get(rec.cid);
+  const preset = presetsFor(rec.collection, rec.props).find((p) => p.id === r.vizId);
   if (!preset) return;
-  const q = QUALITY[r.quality];
-  showRaster(id, {
-    tiles: [tileTemplate(r.rec.collection, r.rec.id, preset.q, r.quality)],
-    bounds: r.rec.bbox, minzoom: c.archive.minzoom, maxzoom: c.archive.maxzoom,
-    tileSize: q.tileSize, opacity: r.opacity, attribution: 'Microsoft Planetary Computer',
-  });
+  if (rec.collection === 'opendata') {
+    // Read straight from the provider's cloud-optimised GeoTIFFs in the browser.
+    const lat = (rec.bbox[1] + rec.bbox[3]) / 2;
+    showRaster(id, {
+      tiles: [registerRaster(id, rec.props.cogs.map((g) => ({ kind: 'cog', url: g.url, bbox: g.bbox })))],
+      bounds: rec.bbox, minzoom: c.archive.minzoom, maxzoom: zoomForGsd(rec.props.gsd || 0.5, lat),
+      tileSize: 512, opacity: r.opacity, attribution: (rec.props.src === 'planet' ? 'Imagery © Planet Labs PBC' : 'Imagery © Vantor') + ', CC BY-NC 4.0',
+    });
+  } else if (rec.collection === 'nisar-gcov') {
+    try {
+      const bounds = await nisarBounds(rec);
+      if (!S.rendered.has(id)) return;
+      showRaster(id, {
+        tiles: [registerRaster(id, [{ kind: 'image', url: rec.props.browseUrl, bounds }])],
+        bounds, minzoom: c.archive.minzoom, maxzoom: 11, tileSize: 512, opacity: r.opacity,
+        attribution: 'NASA/JPL-Caltech and ISRO, ASF DAAC',
+      });
+    } catch (e) {
+      toast(`NISAR BROWSE UNAVAILABLE: ${e.message}`.toUpperCase(), true, 5000);
+      return;
+    }
+  } else {
+    showRaster(id, {
+      tiles: [tileTemplate(rec.collection, rec.id, preset.q, r.quality)],
+      bounds: rec.bbox, minzoom: c.archive.minzoom, maxzoom: c.archive.maxzoom,
+      tileSize: QUALITY[r.quality].tileSize, opacity: r.opacity, attribution: 'Microsoft Planetary Computer',
+    });
+  }
   setLamp('imagery', 'ok', `${S.rendered.size} scene(s) on board`);
 }
 
@@ -206,6 +247,7 @@ export function renderScene(rec, vizId, quality, opacity) {
 
 export function unrenderScene(id, quiet = false) {
   hideRaster(id);
+  unregisterRaster(id);
   S.rendered.delete(id);
   if (!S.rendered.size && !gibs.layer) setLamp('imagery', '');
   if (!quiet) emit('rendered');
@@ -239,7 +281,7 @@ function factsSection(c) {
       h('dt', null, 'SWATH'), h('dd', null, swath),
       h('dt', null, 'REVISIT'), h('dd', null, c.revisit),
     ),
-    h('p', { class: 'blurb' }, h('span', { class: 'tag', style: { color: c.color } }, c.archive || c.gibs ? 'OPEN DATA' : c.group === 'opentrack' ? 'OPEN / EXTERNAL' : 'TRACK ONLY'), ' ', c.access),
+    h('p', { class: 'blurb' }, h('span', { class: 'tag', style: { color: c.color } }, c.archive && c.archive.provider === 'opendata' ? 'FREE RELEASES' : c.archive || c.gibs ? 'OPEN DATA' : c.group === 'opentrack' ? 'OPEN / EXTERNAL' : 'TRACK ONLY'), ' ', c.access),
   );
 }
 
@@ -296,6 +338,7 @@ function aoiText(aoi) {
 
 function scanSection(c) {
   const aoi = currentAOI();
+  const dated = c.archive && c.archive.provider !== 'opendata';     // free releases are listed from all dates
   const rescan = () => scan();
   const today = isoDay(Date.now());
   return h('div', { class: 'sect' },
@@ -311,8 +354,8 @@ function scanSection(c) {
         S.target ? h('button', { class: 'x', title: 'Clear focus point', onclick: () => setTarget(null) }, 'X') : null,
       ),
       h('div', { class: 'aoi-note' }, aoiText(aoi)),
-      c.archive ? h('span', { class: 'k' }, 'LOOKBACK') : null,
-      c.archive ? seg([...PAST, ['custom', 'DATES', 'Search an explicit date range']], S.custom ? 'custom' : S.pastDays, (d) => {
+      dated ? h('span', { class: 'k' }, 'LOOKBACK') : null,
+      dated ? seg([...PAST, ['custom', 'DATES', 'Search an explicit date range']], S.custom ? 'custom' : S.pastDays, (d) => {
         if (d === 'custom') {
           S.custom = true;
           if (!S.to) S.to = isoDay(Date.now());
@@ -320,8 +363,8 @@ function scanSection(c) {
         } else { S.custom = false; S.pastDays = d; }
         rescan();
       }) : null,
-      c.archive && S.custom ? h('span', { class: 'k' }, 'FROM / TO') : null,
-      c.archive && S.custom ? h('div', { class: 'inline' },
+      dated && S.custom ? h('span', { class: 'k' }, 'FROM / TO') : null,
+      dated && S.custom ? h('div', { class: 'inline' },
         h('input', { type: 'date', 'aria-label': 'From date (UTC)', value: S.from, max: S.to || today, onchange: (e) => { if (e.target.value) { S.from = e.target.value; rescan(); } } }),
         h('input', { type: 'date', 'aria-label': 'To date (UTC)', value: S.to, min: S.from, max: today, onchange: (e) => { if (e.target.value) { S.to = e.target.value; rescan(); } } }),
       ) : null,
@@ -398,6 +441,31 @@ function resultsSection(c) {
   return out;
 }
 
+/** Disasters with free commercial imagery. Shown in full at world zoom, folded away once zoomed in. */
+function eventsSection(c) {
+  const evs = (S.resultMeta.events || []).filter((ev) => ev.bbox);
+  if (!c.archive || c.archive.provider !== 'opendata' || !evs.length) return null;
+  const wide = S.resultMeta.aoi && S.resultMeta.aoi.type === 'global';
+  const label = (S.resultMeta.sources || []).map((s) => s.label).join(' + ');
+  const rows = evs.map((ev) => h('div', {
+    class: 'res', style: { '--c': c.color }, title: ev.desc || '',
+    onclick: () => { if (S.aoiMode === 'target') setTarget(null); fitTo(ev.bbox, { maxZoom: 9 }); map.once('moveend', () => { if (S.active === c.id) scan(); }); },
+  }, h('span', { class: 'plat' }, ev.src.toUpperCase()), h('span', { class: 'when' }, ev.t ? stamp(ev.t).slice(0, 11) : ''),
+  h('span', { class: 'rel' }, `${ev.n} ${ev.src === 'maxar' ? 'ACQ' : 'IMG'}`),
+  h('span', { class: 'sub' }, h('span', null, eventName(ev)))));
+  const list = h('div', { class: 'results' }, rows);
+  return h('div', { class: 'sect' },
+    h('h3', null, 'RELEASED EVENTS', h('span', null, `${evs.length} ${label ? `IN ${label}` : ''}`)),
+    wide ? [h('div', { class: 'note' }, 'CLICK AN EVENT TO FLY THERE AND LIST ITS IMAGERY.'), list]
+      : h('details', null, h('summary', null, 'ALL EVENTS'), list));
+}
+
+function lapseSection(c) {
+  if (!c.archive || !PC_COLLECTIONS.has(c.archive.collection) || tab !== 'acquired' || busy) return null;
+  const scenes = S.results.filter((r) => r.kind === 'scene').sort((a, b) => a.time - b.time);
+  return timelapseSection(c, S.resultMeta.aoi, scenes, render);
+}
+
 function linksSection(c) {
   if (!c.links || !c.links.length) return null;
   return h('div', { class: 'sect' }, h('h3', null, 'EXTERNAL CATALOGUES'),
@@ -425,11 +493,11 @@ function detailHead(title) {
 function sceneDetail(rec) {
   const c = S.cons.get(rec.cid);
   const p = rec.props;
+  const pc = PC_COLLECTIONS.has(rec.collection);
   const presets = presetsFor(rec.collection, p);
   const preset = presets.find((x) => x.id === detail.vizId) || presets[0];
   const on = S.rendered.has(rec.id);
   const now = clock.now();
-  const sunEl = p['view:sun_elevation'] ?? (p['s2:mean_solar_zenith'] !== undefined ? 90 - p['s2:mean_solar_zenith'] : null);
 
   const update = () => {
     if (S.rendered.has(rec.id)) {
@@ -439,42 +507,95 @@ function sceneDetail(rec) {
     render();
   };
 
-  const facts = [
-    ['ACQUIRED', stamp(rec.time)], ['DTG', `${dtg(rec.time)}  (${tRel(rec.time, now)})`],
-    rec.cloud !== null ? ['CLOUD', `${rec.cloud.toFixed(1)}%`] : null,
-    sunEl !== null ? ['SUN ELEV', `${sunEl.toFixed(1)}°`] : null,
-    p['sat:orbit_state'] ? ['PASS', `${p['sat:orbit_state']}${p['sat:relative_orbit'] ? `, REL ORBIT ${p['sat:relative_orbit']}` : ''}`] : null,
-    p['sar:instrument_mode'] ? ['MODE', `${p['sar:instrument_mode']} ${(p['sar:polarizations'] || []).join('+')}`] : null,
-    p['s2:mgrs_tile'] ? ['MGRS TILE', p['s2:mgrs_tile']] : null,
-    p['landsat:wrs_path'] ? ['WRS-2', `PATH ${p['landsat:wrs_path']} ROW ${p['landsat:wrs_row']}`] : null,
-    p['s2:processing_baseline'] ? ['BASELINE', p['s2:processing_baseline']] : null,
-  ].filter(Boolean);
+  const when = [['ACQUIRED', stamp(rec.time)], ['DTG', `${dtg(rec.time)}  (${tRel(rec.time, now)})`]];
+  let facts, quick, downloads, sources, dlTitle;
+  const link = (href, label, title) => h('a', { href, target: '_blank', rel: 'noopener', title }, label);
+  const dlrow = (name, desc, href, label = 'SAVE', title) => h('div', { class: 'dlrow' }, h('span', { class: 'an' }, name),
+    h('span', { class: 'ad', title: title || desc }, desc), h('a', { href, target: '_blank', rel: 'noopener', download: '' }, label));
 
-  let downloads;
-  if (detail.itemErr) downloads = h('div', { class: 'note err' }, `ASSET LIST UNAVAILABLE: ${detail.itemErr}`);
-  else if (!detail.item) downloads = h('div', { class: 'note' }, 'RETRIEVING ASSET LIST…');
-  else {
-    const { primary, rest } = primaryAssets(rec.collection, detail.item.assets);
-    const row = (k) => {
-      const a = detail.item.assets[k];
-      return h('div', { class: 'dlrow' }, h('span', { class: 'an' }, k), h('span', { class: 'ad', title: a.title || '' }, a.title || a.type || ''),
-        h('a', { href: downloadUrl(rec.collection, rec.id, k), download: '' }, 'SAVE'));
-    };
-    downloads = h('div', { class: 'dl' }, primary.map(row),
-      rest.length ? h('details', null, h('summary', null, `ALL OTHER ASSETS (${rest.length})`), rest.map(row)) : null);
+  if (rec.collection === 'opendata') {
+    const ev = p.event;
+    const provider = p.src === 'planet' ? 'PLANET LABS PBC (CRISIS RESPONSE PROGRAM)' : p.src === 'maxar' ? 'MAXAR (OPEN DATA PROGRAM ARCHIVE)' : 'VANTOR (OPEN DATA PROGRAM)';
+    facts = [...when,
+      ev ? ['EVENT', eventName(ev)] : null,
+      p.phase ? ['PHASE', p.phase === 'pre' ? 'PRE-EVENT (BASELINE)' : 'POST-EVENT'] : null,
+      ['SENSOR', `${p.plat}${p.gsd ? `, ${p.gsd} M GSD` : ''}`],
+      rec.cloud !== null ? ['CLOUD', `${rec.cloud.toFixed(0)}%${p.src === 'planet' ? ' (PROVIDER ESTIMATE, OFTEN TOO HIGH)' : ''}`] : null,
+      p.offNadir !== null && p.offNadir !== undefined ? ['OFF-NADIR', `${p.offNadir}°`] : null,
+      p.sunEl !== null && p.sunEl !== undefined ? ['SUN ELEV', `${p.sunEl}°`] : null,
+      ['RELEASED BY', provider], ['LICENCE', 'CC BY-NC 4.0 (NON-COMMERCIAL, CREDIT REQUIRED)'],
+    ].filter(Boolean);
+    quick = p.thumb;
+    dlTitle = 'FULL-RESOLUTION GEOTIFF';
+    const tiles = p.cogs;
+    downloads = h('div', { class: 'dl' },
+      tiles.length === 1 ? dlrow('visual', 'Pansharpened natural colour, cloud-optimised GeoTIFF (often 0.5 to 1.5 GB)', tiles[0].url)
+        : [h('div', { class: 'note' }, `DELIVERED AS ${tiles.length} TILES OF ABOUT 5 KM.`),
+          h('details', null, h('summary', null, `ALL ${tiles.length} TILES`),
+            tiles.slice(0, 400).map((t, i) => dlrow(`tile ${i + 1}`, t.url.split('/').slice(-3, -1).join(' / '), t.url)))]);
+    sources = [link(p.item, p.src === 'maxar' ? 'STAC ACQUISITION' : 'STAC ITEM'), ev ? link(ev.url, 'EVENT CATALOGUE') : null,
+      link('https://creativecommons.org/licenses/by-nc/4.0/', 'LICENCE'),
+      link(p.src === 'planet' ? 'https://www.planet.com/disasterdata/' : 'https://registry.opendata.aws/vantor-open-data/', 'ABOUT THE PROGRAM')];
+  } else if (rec.collection === 'nisar-gcov') {
+    const size = Object.entries(p.bytes || {}).find(([k]) => k.endsWith('.h5'));
+    facts = [...when,
+      ['PASS', `${p.flightDirection || ''}, TRACK ${p.pathNumber}, FRAME ${p.frameNumber}`],
+      ['POLARISATION', `${(p.mainBandPolarization || []).join('+')}${(p.sideBandPolarization || []).length ? ` (SIDE BAND ${p.sideBandPolarization.join('+')})` : ''}`],
+      p.rangeBandwidth ? ['BANDWIDTH', `${[].concat(p.rangeBandwidth).join(', ')} MHZ`] : null,
+      ['COVERAGE', (p.frameCoverage || '').toUpperCase() || 'UNKNOWN'],
+      ['PRODUCT', `L2 GCOV (GEOCODED BACKSCATTER), ${p.crid || ''}`],
+      ['PROCESSED', p.processingDate ? stamp(Date.parse(p.processingDate)) : ''],
+    ].filter(Boolean);
+    quick = p.thumbUrl;
+    dlTitle = 'NASA EARTHDATA (FREE LOGIN)';
+    downloads = h('div', { class: 'dl' },
+      p.url ? dlrow('gcov.h5', `Full product, HDF5${size ? `, ${(size[1].bytes / 1e9).toFixed(1)} GB` : ''}. Needs an Earthdata login.`, p.url) : null,
+      p.browseUrl ? dlrow('browse.png', 'Geocoded browse image (no login)', p.browseUrl) : null,
+      p.kmlUrl ? dlrow('browse.kml', 'Browse image as a Google Earth overlay', p.kmlUrl) : null,
+      p.qaUrl ? dlrow('qa.pdf', 'Quality assurance report', p.qaUrl) : null,
+      h('div', { class: 'note' }, 'THE HDF5 PRODUCT OPENS IN QGIS, SNAP OR PYTHON (H5PY, XARRAY). REGISTER FREE AT URS.EARTHDATA.NASA.GOV.'));
+    sources = [link(`https://search.asf.alaska.edu/#/?dataset=NISAR&searchType=List%20Search&searchList=${encodeURIComponent(rec.id)}`, 'ASF VERTEX'),
+      link('https://nisar-docs.asf.alaska.edu/', 'NISAR DATA USER GUIDE')];
+  } else {
+    const sunEl = p['view:sun_elevation'] ?? (p['s2:mean_solar_zenith'] !== undefined ? 90 - p['s2:mean_solar_zenith'] : null);
+    facts = [...when,
+      rec.cloud !== null ? ['CLOUD', `${rec.cloud.toFixed(1)}%`] : null,
+      sunEl !== null ? ['SUN ELEV', `${sunEl.toFixed(1)}°`] : null,
+      p['sat:orbit_state'] ? ['PASS', `${p['sat:orbit_state']}${p['sat:relative_orbit'] ? `, REL ORBIT ${p['sat:relative_orbit']}` : ''}`] : null,
+      p['sar:instrument_mode'] ? ['MODE', `${p['sar:instrument_mode']} ${(p['sar:polarizations'] || []).join('+')}`] : null,
+      p['s2:mgrs_tile'] ? ['MGRS TILE', p['s2:mgrs_tile']] : null,
+      p['landsat:wrs_path'] ? ['WRS-2', `PATH ${p['landsat:wrs_path']} ROW ${p['landsat:wrs_row']}`] : null,
+      p['s2:processing_baseline'] ? ['BASELINE', p['s2:processing_baseline']] : null,
+    ].filter(Boolean);
+    quick = quicklookUrl(rec.collection, rec.id, preset.q);
+    dlTitle = 'CLOUD-OPTIMISED GEOTIFF';
+    if (detail.itemErr) downloads = h('div', { class: 'note err' }, `ASSET LIST UNAVAILABLE: ${detail.itemErr}`);
+    else if (!detail.item) downloads = h('div', { class: 'note' }, 'RETRIEVING ASSET LIST…');
+    else {
+      const { primary, rest } = primaryAssets(rec.collection, detail.item.assets);
+      const row = (k) => {
+        const a = detail.item.assets[k];
+        return h('div', { class: 'dlrow' }, h('span', { class: 'an' }, k), h('span', { class: 'ad', title: a.title || '' }, a.title || a.type || ''),
+          h('a', { href: downloadUrl(rec.collection, rec.id, k), download: '' }, 'SAVE'));
+      };
+      downloads = h('div', { class: 'dl' }, primary.map(row),
+        rest.length ? h('details', null, h('summary', null, `ALL OTHER ASSETS (${rest.length})`), rest.map(row)) : null);
+    }
+    downloads = [downloads, h('div', { class: 'btnrow' },
+      h('a', { class: 'tag', style: { textAlign: 'center', lineHeight: '20px' }, href: exportUrl(rec.collection, rec.id, preset.q, preset.id), download: '' }, `SAVE ${preset.label} AS PNG`))];
+    const day = isoDay(rec.time);
+    const ctr = [(rec.bbox[0] + rec.bbox[2]) / 2, (rec.bbox[1] + rec.bbox[3]) / 2];
+    const cdse = rec.cid === 'landsat' ? null
+      : `https://browser.dataspace.copernicus.eu/?zoom=10&lat=${ctr[1].toFixed(4)}&lng=${ctr[0].toFixed(4)}&fromTime=${day}T00%3A00%3A00.000Z&toTime=${day}T23%3A59%3A59.999Z&datasetId=${rec.cid === 'sentinel-2' ? 'S2_L2A_CDAS' : 'S1_CDAS_IW_VVVH'}`;
+    sources = [link(`${PC}/stac/v1/collections/${rec.collection}/items/${rec.id}`, 'STAC ITEM'), cdse ? link(cdse, 'COPERNICUS BROWSER (SAME DAY)') : null];
   }
-
-  const day = isoDay(rec.time);
-  const ctr = [(rec.bbox[0] + rec.bbox[2]) / 2, (rec.bbox[1] + rec.bbox[3]) / 2];
-  const cdse = rec.cid === 'landsat' ? null
-    : `https://browser.dataspace.copernicus.eu/?zoom=10&lat=${ctr[1].toFixed(4)}&lng=${ctr[0].toFixed(4)}&fromTime=${day}T00%3A00%3A00.000Z&toTime=${day}T23%3A59%3A59.999Z&datasetId=${rec.cid === 'sentinel-2' ? 'S2_L2A_CDAS' : 'S1_CDAS_IW_VVVH'}`;
 
   return [
     detailHead(`${rec.platform} // ${dtg(rec.time)}`),
     h('div', { class: 'sect' },
-      h('div', { class: 'quicklook' }, 'QUICKLOOK',
-        h('img', { src: quicklookUrl(rec.collection, rec.id, preset.q), alt: `Quicklook of ${rec.id}`, loading: 'lazy', onerror: (e) => e.target.remove() })),
-      h('div', { class: 'sceneid', title: 'Click to copy scene ID', onclick: () => { navigator.clipboard.writeText(rec.id).then(() => toast('SCENE ID COPIED')); } }, rec.id),
+      quick ? h('div', { class: 'quicklook' }, 'QUICKLOOK',
+        h('img', { src: quick, alt: `Quicklook of ${rec.id}`, loading: 'lazy', onerror: (e) => e.target.remove() })) : null,
+      h('div', { class: 'sceneid', title: 'Click to copy scene ID', onclick: () => { navigator.clipboard.writeText(rec.id.replace(/^(vantor|maxar|planet):/, '')).then(() => toast('SCENE ID COPIED')); } }, rec.id.replace(/^(vantor|maxar|planet):/, '')),
       h('dl', { class: 'facts', style: { marginTop: '6px' } }, facts.map(([k, v]) => [h('dt', null, k), h('dd', null, v)])),
     ),
     h('div', { class: 'sect' },
@@ -485,8 +606,8 @@ function sceneDetail(rec) {
         onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); detail.vizId = v.id; update(); } },
       }, h('span', { class: 'dot' }), h('span', { class: 'vn' }, v.label), h('span', { class: 'vh' }, v.hint)))),
       h('div', { class: 'ctl', style: { marginTop: '8px' } },
-        h('span', { class: 'k' }, 'DETAIL'),
-        seg(Object.entries(QUALITY).map(([k, q]) => [k, q.label, q.hint]), detail.quality, (k) => { detail.quality = k; update(); }),
+        pc ? h('span', { class: 'k' }, 'DETAIL') : null,
+        pc ? seg(Object.entries(QUALITY).map(([k, q]) => [k, q.label, q.hint]), detail.quality, (k) => { detail.quality = k; update(); }) : null,
         h('label', { for: 'scene-op' }, 'OPACITY'),
         h('div', { class: 'inline' }, h('input', { id: 'scene-op', type: 'range', min: 0.1, max: 1, step: 0.05, value: detail.opacity,
           oninput: (e) => {
@@ -494,24 +615,16 @@ function sceneDetail(rec) {
             if (S.rendered.has(rec.id)) { S.rendered.get(rec.id).opacity = detail.opacity; setRasterOpacity(rec.id, detail.opacity); }
           } })),
       ),
+      rec.collection === 'opendata' ? h('div', { class: 'note' }, 'STREAMED FROM THE PROVIDER AT FULL RESOLUTION: ZOOM IN FOR DETAIL. TILES TAKE A MOMENT TO APPEAR.') : null,
       h('div', { class: 'btnrow' },
         on ? h('button', { class: 'wide', onclick: () => unrenderScene(rec.id) }, 'REMOVE FROM BOARD')
           : h('button', { class: 'primary wide', onclick: () => renderScene(rec, preset.id, detail.quality, detail.opacity) }, 'RENDER ON BOARD'),
-        h('button', { class: 'wide', title: 'Centre the board on this footprint', onclick: () => fitTo(rec.bbox, { maxZoom: 10 }) }, 'GO TO'),
+        h('button', { class: 'wide', title: 'Centre the board on this footprint', onclick: () => fitTo(rec.bbox, { maxZoom: rec.collection === 'opendata' ? 14 : 10 }) }, 'GO TO'),
       ),
     ),
     onBoardSection(),
-    h('div', { class: 'sect' },
-      h('h3', null, 'DOWNLOAD TO DISK', h('span', null, 'CLOUD-OPTIMISED GEOTIFF')),
-      downloads,
-      h('div', { class: 'btnrow' },
-        h('a', { class: 'tag', style: { textAlign: 'center', lineHeight: '20px' }, href: exportUrl(rec.collection, rec.id, preset.q, preset.id), download: '' }, `SAVE ${preset.label} AS PNG`)),
-    ),
-    h('div', { class: 'sect' }, h('h3', null, 'SOURCE RECORD'),
-      h('div', { class: 'links' },
-        h('a', { href: `${PC}/stac/v1/collections/${rec.collection}/items/${rec.id}`, target: '_blank', rel: 'noopener' }, 'STAC ITEM'),
-        cdse ? h('a', { href: cdse, target: '_blank', rel: 'noopener' }, 'COPERNICUS BROWSER (SAME DAY)') : null,
-      )),
+    h('div', { class: 'sect' }, h('h3', null, 'DOWNLOAD TO DISK', h('span', null, dlTitle)), downloads),
+    h('div', { class: 'sect' }, h('h3', null, 'SOURCE RECORD'), h('div', { class: 'links' }, sources)),
   ];
 }
 
@@ -569,7 +682,8 @@ export function render() {
     view = 'main';
     body.replaceChildren(...[
       factsSection(c), satsSection(c), c.gibs ? gibsSection(c) : null,
-      canScan(c) ? scanSection(c) : null, onBoardSection(), canScan(c) ? resultsSection(c) : null, linksSection(c),
+      canScan(c) ? scanSection(c) : null, onBoardSection(), eventsSection(c), canScan(c) ? resultsSection(c) : null,
+      lapseSection(c), linksSection(c),
     ].flat(Infinity).filter(Boolean));
     paintSatPositions();
   }

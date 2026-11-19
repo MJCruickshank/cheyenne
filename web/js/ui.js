@@ -366,7 +366,8 @@ export function initUI() {
   map.on('moveend', paintAoiReadout);
   paintAoiReadout();
   $('#credits').replaceChildren(
-    'Orbits: CelesTrak. Scenes: Microsoft Planetary Computer (Copernicus Sentinel, USGS Landsat). Tasking: ESA. ',
+    'Orbits: CelesTrak. Scenes: Microsoft Planetary Computer (Copernicus Sentinel, USGS Landsat); NISAR: NASA/JPL-Caltech and ISRO via ASF DAAC. Tasking: ESA. ',
+    'Free releases: Vantor (formerly Maxar) and Planet Labs PBC, CC BY-NC 4.0. ',
     'Mosaics and live view: NASA GIBS, NOAA, EUMETSAT. Fires: NASA FIRMS. Ships: aisstream.io, Fintraffic / digitraffic.fi (CC BY 4.0), Open Waters AIS, Pelyr (see AIS panel). Intel: public Telegram channels; places: GeoNames. ',
     'Basemap: OpenFreeMap © OpenStreetMap; imagery © Esri.');
 }

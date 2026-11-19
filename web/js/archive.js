@@ -4,7 +4,7 @@ import { S, clock } from './state.js';
 import { map } from './globe.js';
 import { PC } from './viz.js';
 import { fleet, findPlatform, platformShort, closestApproach, predictPasses } from './tracker.js';
-import { DAY, bboxOf, getJSON, clamp } from './util.js';
+import { DAY, bboxOf, getJSON, clamp, pointInGeom } from './util.js';
 
 const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
 
@@ -54,7 +54,14 @@ function sceneRecord(con, f) {
   };
 }
 
+/** Scenes already acquired over the area, from whichever archive the fleet uses. */
 export async function searchScenes(con, aoi, t0, t1, cloudMax, signal) {
+  if (con.archive.provider === 'opendata') return searchOpenData(con, aoi, signal);
+  if (con.archive.provider === 'asf') return searchNisar(con, aoi, t0, t1, signal);
+  return searchPC(con, aoi, t0, t1, cloudMax, signal);
+}
+
+async function searchPC(con, aoi, t0, t1, cloudMax, signal) {
   let body = {
     collections: [con.archive.collection],
     datetime: `${iso(t0)}/${iso(t1)}`,
@@ -81,6 +88,93 @@ export async function searchScenes(con, aoi, t0, t1, cloudMax, signal) {
     if (page === 4 && body) truncated = true;
   }
   return { records: out, truncated };
+}
+
+// ---------------------------------------------------------------- open commercial releases (server index)
+
+/** Readable event name: "Nepal-Flooding-Aug-2026" -> "NEPAL FLOODING AUG 2026". */
+export function eventName(ev) {
+  return (ev.title || ev.id).replace(/^Planet Crisis Response\s*[—-]\s*/i, '').replace(/[-_]+/g, ' ').toUpperCase();
+}
+
+async function searchOpenData(con, aoi, signal) {
+  const q = new URLSearchParams({ src: con.archive.sources.join(',') });
+  if (aoi.type === 'point') q.set('bbox', [aoi.lon - 0.005, aoi.lat - 0.005, aoi.lon + 0.005, aoi.lat + 0.005].join(','));
+  else if (aoi.type === 'box') q.set('bbox', aoi.bbox.join(','));
+  const res = await getJSON(`/api/opendata?${q}`, { signal });
+  const events = new Map(res.events.map((ev) => [ev.id, ev]));
+  let scenes = res.scenes;
+  if (aoi.type === 'point') scenes = scenes.filter((sc) => pointInGeom([aoi.lon, aoi.lat], sc.geom));
+  const records = scenes.map((sc) => {
+    const ev = events.get(sc.ev);
+    return {
+      id: sc.id, kind: 'scene', cid: con.id, color: con.color, collection: 'opendata',
+      platform: sc.plat, sat: null, time: sc.t, end: sc.t, geometry: sc.geom, bbox: sc.bbox,
+      cloud: typeof sc.cloud === 'number' ? sc.cloud : null,
+      sub: [sc.phase ? `${sc.phase.toUpperCase()}-EVENT` : null, sc.gsd ? `${sc.gsd} M` : null, ev ? eventName(ev).slice(0, 28) : null].filter(Boolean),
+      props: { ...sc, event: ev || null },
+    };
+  });
+  return { records, truncated: !!res.truncated, events: res.events, sources: res.sources };
+}
+
+// ---------------------------------------------------------------- NISAR (Alaska Satellite Facility)
+
+const ASF = 'https://api.daac.asf.alaska.edu/services/search/param';
+
+async function searchNisar(con, aoi, t0, t1, signal) {
+  const q = new URLSearchParams({
+    dataset: 'NISAR', processingLevel: 'GCOV', start: iso(t0), end: iso(Math.min(t1, Date.now())), maxResults: '250', output: 'geojson',
+  });
+  if (aoi.type === 'point') q.set('intersectsWith', `POINT(${aoi.lon.toFixed(5)} ${aoi.lat.toFixed(5)})`);
+  else q.set('bbox', aoi.bbox.join(','));
+  const res = await getJSON(`${ASF}?${q}`, { signal });
+  // The same frame can be listed once per processing run: keep the most recently processed.
+  const best = new Map();
+  for (const f of res.features || []) {
+    const p = f.properties;
+    const key = `${p.pathNumber}/${p.frameNumber}/${p.startTime}`;
+    const prev = best.get(key);
+    if (!prev || (p.processingDate || '') > (prev.properties.processingDate || '')) best.set(key, f);
+  }
+  const records = [...best.values()].map((f) => {
+    const p = f.properties;
+    const find = (list, re) => (list || []).find((u) => re.test(u)) || null;
+    const time = Date.parse(p.startTime);
+    return {
+      id: p.sceneName, kind: 'scene', cid: con.id, color: con.color, collection: 'nisar-gcov',
+      platform: 'NISAR', sat: findPlatform('NISAR'), time, end: Date.parse(p.stopTime || p.startTime),
+      geometry: f.geometry, bbox: bboxOf(f.geometry), cloud: null,
+      sub: [(p.flightDirection || '').slice(0, 4), `TRACK ${p.pathNumber}`, `FRAME ${p.frameNumber}`,
+        (p.mainBandPolarization || []).join('+'), p.frameCoverage === 'Full' ? '' : (p.frameCoverage || '').toUpperCase()].filter(Boolean),
+      props: {
+        ...p, browseUrl: find(p.browse, /_LATLON\.png$/), thumbUrl: find(p.browse, /_LATLON_thumbnail\.png$/),
+        kmlUrl: find(p.additionalUrls, /_LATLON\.kml$/), qaUrl: find(p.additionalUrls, /_QA_REPORT\.pdf$/),
+      },
+    };
+  });
+  return { records, truncated: (res.features || []).length >= 250 };
+}
+
+/** Geographic bounds of a NISAR browse image, from the KML published beside it. */
+export async function nisarBounds(rec) {
+  if (rec.props.bounds) return rec.props.bounds;
+  if (!rec.props.kmlUrl) throw new Error('no browse georeference');
+  const res = await fetch(rec.props.kmlUrl);
+  if (!res.ok) throw new Error(`browse KML: HTTP ${res.status}`);
+  const text = await res.text();
+  const nums = (/<coordinates>([^<]+)<\/coordinates>/.exec(text) || [])[1];
+  let box;
+  if (nums) {
+    const pts = nums.trim().split(/\s+/).map((pair) => pair.split(',').map(Number));
+    box = [Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1]))];
+  } else {
+    const tag = (t) => parseFloat((new RegExp(`<${t}>([^<]+)</${t}>`).exec(text) || [])[1]);
+    box = [tag('west'), tag('south'), tag('east'), tag('north')];
+  }
+  if (!box.every(Number.isFinite)) throw new Error('browse KML has no bounds');
+  rec.props.bounds = box;
+  return box;
 }
 
 /** Full STAC item (with assets) for one scene. */

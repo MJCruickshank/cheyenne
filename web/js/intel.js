@@ -17,7 +17,7 @@ const RING_KM = { district: 12, region: 45 };  // drawn uncertainty by how preci
 const PREC = { exact: 'EXACT', site: 'SITE', settlement: 'SETTLEMENT', district: 'DISTRICT', region: 'REGION', country: 'COUNTRY' };
 const HOT = ['strike', 'drone', 'shelling', 'explosion', 'fire', 'infrastructure', 'air_defence'];
 
-const RED = '#ff453a', ORANGE = '#ff9f0a', YELLOW = '#ffd60a', SKY = '#64d2ff', PINK = '#ff6fae', VIOLET = '#b79bff', GREEN = '#7cf29a', PALE = '#e2fff7';
+const RED = '#ff453a', ORANGE = '#ff9f0a', YELLOW = '#ffd60a', SKY = '#64d2ff', PINK = '#ff6fae', VIOLET = '#b79bff', GREEN = '#7cf29a', PALE = '#e2fff7', LIME = '#c6ff5c';
 
 // Each glyph is drawn in a 30 px box centred on (c, c).
 const CATS = {
@@ -36,6 +36,8 @@ const CATS = {
   disaster: { label: 'DISASTER', color: PALE, draw(g, c) { for (const dy of [-3.5, 1, 5.5]) { g.beginPath(); g.moveTo(c - 7, c + dy); g.bezierCurveTo(c - 3.5, c + dy - 4, c - 1, c + dy + 3, c + 1.5, c + dy - 0.5); g.bezierCurveTo(c + 3.5, c + dy - 3, c + 5, c + dy, c + 7, c + dy - 1); g.stroke(); } } },
   unrest: { label: 'UNREST', color: PALE, draw(g, c) { g.strokeRect(c - 6, c - 7, 12, 7.5); line(g, c, c + 0.5, c, c + 7.5); line(g, c - 3, c - 3.2, c + 3, c - 3.2); } },
   humanitarian: { label: 'HUMANITARIAN', color: GREEN, draw(g, c) { g.fillRect(c - 2, c - 6.5, 4, 13); g.fillRect(c - 6.5, c - 2, 13, 4); } },
+  crime: { label: 'CRIME', color: PINK, draw(g, c) { g.beginPath(); g.arc(c, c, 5.5, 0, Math.PI * 2); g.stroke(); line(g, c, c - 8, c, c - 3); line(g, c, c + 3, c, c + 8); line(g, c - 8, c, c - 3, c); line(g, c + 3, c, c + 8, c); } },
+  cyber: { label: 'CYBER', color: LIME, draw(g, c) { g.strokeRect(c - 5.5, c - 1, 11, 8); g.beginPath(); g.arc(c, c - 1, 3.6, Math.PI, 0); g.stroke(); g.fillRect(c - 0.9, c + 1.5, 1.8, 3); } },
   other: { label: 'OTHER', color: PALE, draw(g, c) { g.beginPath(); g.arc(c, c, 2.4, 0, Math.PI * 2); g.fill(); } },
 };
 const catOf = (p) => (CATS[p.cat] ? p.cat : 'other');
@@ -498,6 +500,7 @@ function renderChannels() {
   const group = h('input', { type: 'text', placeholder: 'GROUP', list: 'intel-groups', 'aria-label': 'Group', value: groups[0] || '' });
   const budget = h('input', { type: 'text', inputmode: 'decimal', value: intel.status ? intel.status.budget.toFixed(2) : '', 'aria-label': 'Daily budget in US dollars' });
   return [
+    h('div', { class: 'btnrow' }, h('button', { class: 'wide', title: 'Choose which of the starting channel groups to follow', onclick: openGroups }, 'CHOOSE CHANNEL GROUPS')),
     h('form', { class: 'i-add', onsubmit: (e) => { e.preventDefault(); if (name.value.trim()) act({ action: 'add', name: name.value, group: group.value }, () => toast('CHANNEL ADDED')); } },
       name, h('label', null, 'GROUP'), group, h('datalist', { id: 'intel-groups' }, groups.map((g) => h('option', { value: g }))), h('button', { class: 'primary' }, 'FOLLOW')),
     groups.map((g) => h('div', { class: 'grp' },
@@ -511,7 +514,7 @@ function renderChannels() {
       h('button', { class: 'x', title: 'Stop following and delete its posts', onclick: (e) => { e.stopPropagation(); if (confirm(`Stop following @${c.name} and delete its stored posts?`)) act({ action: 'remove', name: c.name }); } }, 'X'))))),
     h('form', { class: 'i-budget', onsubmit: (e) => { e.preventDefault(); act({ action: 'budget', value: parseFloat(budget.value) }, () => toast('DAILY BUDGET SET')); } },
       h('label', null, 'DAILY BUDGET $'), budget, h('button', null, 'SET')),
-    h('div', { class: 'note' }, 'Channels are read from their public web preview once a minute while this tab is on. Place extraction stops for the day when the budget is reached.'),
+    h('div', { class: 'note' }, 'Channels are read from their public web preview while the monitor is on: busy channels every minute, quiet ones every 3 to 10 minutes. Place extraction stops for the day when the budget is reached.'),
   ];
 }
 
@@ -519,7 +522,13 @@ function renderBody() {
   const body = $('#intel-body');
   const keep = body.scrollTop;
   if (!intel.on) {
-    body.replaceChildren(h('div', { class: 'note' }, 'Switch the monitor on to follow public Telegram channels. Posts from the last 24 hours are placed on the globe where they can be located, and new ones raise an alert.'));
+    body.replaceChildren(h('div', { class: 'note' }, 'Switch the monitor on to follow public Telegram channels. Posts from the last 24 hours are placed on the globe where they can be located, and new ones raise an alert.'),
+      h('div', { class: 'btnrow' }, h('button', { class: 'wide', onclick: openGroups }, 'CHOOSE CHANNEL GROUPS')));
+    return;
+  }
+  if (intel.view === 'feed' && intel.loaded && !intel.channels.some((c) => !c.muted)) {
+    body.replaceChildren(h('div', { class: 'note' }, 'No channels are being followed.'),
+      h('div', { class: 'btnrow' }, h('button', { class: 'primary wide', onclick: openGroups }, 'CHOOSE CHANNEL GROUPS')));
     return;
   }
   body.replaceChildren(...(intel.view === 'feed' ? renderFeed() : renderChannels()).flat(Infinity).filter(Boolean));
@@ -538,6 +547,91 @@ function render() {
   const toggle = (key, label, title) => h('button', { class: intel[key] ? 'on' : '', title, onclick: () => { intel[key] = !intel[key]; prefs.save(); if (key === 'sound' && intel.sound) beep(); render(); } }, label);
   $('#intel-foot').replaceChildren(h('div', { class: 'seg' }, toggle('alerts', 'ALERT CARDS', 'Show a card when a new located report arrives'), toggle('sound', 'SOUND', 'Play a tone with each alert')),
     h('div', { class: 'i-legend' }, 'DASHED RING: PLACED ONLY TO A DISTRICT OR REGION, OR AN ESTIMATE.'));
+}
+
+// ---------------------------------------------------------------- channel groups (start-up prompt)
+
+let modalKeys = null;
+
+function closeModal() {
+  $('#modal').hidden = true;
+  $('#modal').replaceChildren();
+  if (modalKeys) { document.removeEventListener('keydown', modalKeys); modalKeys = null; }
+}
+
+/** Ask which of the starting channel groups to follow. */
+export async function openGroups() {
+  let info;
+  try { info = await getJSON('/api/intel/groups'); } catch (e) { toast(`INTEL: ${e.message}`.toUpperCase(), true, 5000); return; }
+  const chosen = new Set(info.groups.filter((g) => g.selected).map((g) => g.id));
+  let ask = info.ask;
+  const money = (v) => `$${v.toFixed(2)}`;
+  const total = h('div', { class: 'g-total' });
+  const paintTotal = () => {
+    const posts = info.groups.filter((g) => chosen.has(g.id)).reduce((a, g) => a + g.est, 0);
+    const cost = posts * info.costPerPost;
+    total.replaceChildren(
+      h('span', null, chosen.size ? `${chosen.size} GROUP${chosen.size > 1 ? 'S' : ''}  ${chosen.size * 10} CHANNELS  ABOUT ${posts.toLocaleString('en')} POSTS A DAY` : 'NO GROUPS SELECTED'),
+      h('span', { class: cost > info.budget ? 'amber' : 'muted' }, chosen.size ? `ANALYSIS ABOUT ${money(cost)} A DAY, CAPPED AT ${money(info.budget)}${cost > info.budget ? ': RAISE THE BUDGET IN THE CHANNELS VIEW' : ''}` : ''));
+  };
+  const card = (g) => {
+    const lamp = h('button', { class: 'lampbtn' + (chosen.has(g.id) ? ' lit' : ''), 'aria-pressed': String(chosen.has(g.id)), 'aria-label': `Follow ${g.label}` });
+    const el = h('div', { class: 'g-card' + (chosen.has(g.id) ? ' on' : '') },
+      h('div', { class: 'g-top', onclick: () => {
+        if (chosen.has(g.id)) chosen.delete(g.id); else chosen.add(g.id);
+        el.classList.toggle('on', chosen.has(g.id));
+        lamp.classList.toggle('lit', chosen.has(g.id));
+        lamp.setAttribute('aria-pressed', String(chosen.has(g.id)));
+        paintTotal();
+      } }, lamp, h('b', null, g.label), h('span', { class: 'ct' }, `~${g.est} / DAY`)),
+      h('div', { class: 'g-note' }, g.note),
+      h('details', null, h('summary', null, `${g.channels.length} CHANNELS`),
+        h('div', { class: 'g-chans' }, g.channels.map((c) => h('a', { href: `https://t.me/s/${c.name}`, target: '_blank', rel: 'noopener noreferrer', title: `@${c.name}` }, c.title)))));
+    return el;
+  };
+  const confirm = async () => {
+    try {
+      const res = await command({ action: 'groups', groups: [...chosen], ask });
+      closeModal();
+      if (chosen.size && !intel.on) { await setIntel(true); showTab('intel'); }
+      else if (intel.on) merge(res);
+      toast(chosen.size ? `FOLLOWING ${chosen.size} CHANNEL GROUP${chosen.size > 1 ? 'S' : ''}` : 'CHANNEL GROUPS PAUSED');
+    } catch (e) { toast(e.message.toUpperCase(), true, 5000); }
+  };
+  const later = async () => {
+    closeModal();
+    if (ask !== info.ask) { try { await command({ action: 'ask', value: ask }); } catch { /* keep going */ } }
+  };
+  const askBox = h('input', { type: 'checkbox', id: 'g-ask', checked: ask, onchange: (e) => { ask = e.target.checked; } });
+  const box = $('#modal');
+  box.replaceChildren(h('div', { class: 'modal-box panel', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'g-title' },
+    h('div', { class: 'panel-head' }, h('span', { id: 'g-title' }, 'INTEL // CHANNEL GROUPS'), h('button', { class: 'x', title: 'Close without changes', onclick: later }, 'X')),
+    h('div', { class: 'panel-body' },
+      h('p', { class: 'g-intro' }, 'Choose which groups of public Telegram channels to follow. New posts are read from each channel\'s public web preview, placed on the map by a language model and listed in the Intel tab. Each group mixes official, independent, partisan and state-run sources; nothing is verified.'),
+      info.custom ? h('p', { class: 'g-intro muted' }, `${info.custom} channel${info.custom > 1 ? 's' : ''} you added yourself ${info.custom > 1 ? 'are' : 'is'} not affected.`) : '',
+      h('div', { class: 'g-grid' }, info.groups.map(card))),
+    h('div', { class: 'g-foot' },
+      total,
+      h('div', { class: 'g-actions' },
+        h('label', { class: 'g-ask', for: 'g-ask' }, askBox, 'ASK WHEN THE BOARD OPENS'),
+        h('button', { onclick: () => { const all = chosen.size < info.groups.length; info.groups.forEach((g) => (all ? chosen.add(g.id) : chosen.delete(g.id))); openGroupsRepaint(); } }, 'ALL / NONE'),
+        h('button', { onclick: later }, 'NOT NOW'),
+        h('button', { class: 'primary', onclick: confirm }, 'FOLLOW SELECTED')))));
+  const openGroupsRepaint = () => {
+    box.querySelectorAll('.g-card').forEach((el, i) => {
+      const on = chosen.has(info.groups[i].id);
+      el.classList.toggle('on', on);
+      const lamp = el.querySelector('.lampbtn');
+      lamp.classList.toggle('lit', on); lamp.setAttribute('aria-pressed', String(on));
+    });
+    paintTotal();
+  };
+  paintTotal();
+  box.hidden = false;
+  if (modalKeys) document.removeEventListener('keydown', modalKeys);
+  modalKeys = (e) => { if (e.key === 'Escape') later(); };
+  document.addEventListener('keydown', modalKeys);
+  box.querySelector('.g-actions .primary').focus();
 }
 
 function showTab(which) {
@@ -561,4 +655,9 @@ export async function initIntel() {
     const res = await getJSON('/api/intel?peek=1&since=999999999');
     if (res.enabled) { await setIntel(true); showTab('intel'); }
   } catch { /* an older server without Intel: the tab simply stays off */ }
+  // Ask which channel groups to follow, unless that has been switched off.
+  try {
+    const info = await getJSON('/api/intel/groups');
+    if (info.ask) setTimeout(openGroups, 600);
+  } catch { /* no group catalogue on this server */ }
 }

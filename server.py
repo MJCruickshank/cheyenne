@@ -13,7 +13,8 @@ small JSON API that does the things a browser cannot do politely or at all:
   /api/firms      NASA FIRMS active-fire detections as GeoJSON (add meta=1 for counts)
   /api/geo        timestamps of the newest geostationary weather-satellite frames
   /api/intel      Telegram channel monitor: posts placed on the map (see intel.py)
-  /api/ais        live ship positions from aisstream.io (see ais.py)
+  /api/ais        live ship positions from several free AIS feeds (see ais.py)
+  /api/opendata   open high-resolution imagery releases over an area (see opendata.py)
 
 Run:  python3 server.py [--port 8642] [--host 127.0.0.1]
 """
@@ -41,6 +42,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import ais
 import intel
+import opendata
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(ROOT, "web")
@@ -540,6 +542,7 @@ def geo_times():
 SAFE_ID = re.compile(r"^[A-Za-z0-9_.\-]+$")
 INTEL = None            # intel.Intel, created in main()
 AIS = None              # ais.AIS, created in main()
+OPENDATA = None         # opendata.OpenData, created in main()
 
 
 def signed_asset(collection, item, asset):
@@ -658,6 +661,8 @@ class Handler(SimpleHTTPRequestHandler):
                     return self.send_json({"error": "forbidden"}, 403)
                 if url.path == "/api/intel/post":
                     return self.send_json(INTEL.post_text(q.get("k", "")))
+                if url.path == "/api/intel/groups":
+                    return self.send_json(INTEL.groups_info())
                 return self.send_json(INTEL.snapshot(int(q.get("since", "0")), watching=not q.get("peek")))
             if url.path.startswith("/api/ais"):
                 if not self.same_site():
@@ -712,6 +717,13 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_bytes(body, "application/geo+json")
             if url.path == "/api/geo":
                 return self.send_json(geo_times())
+            if url.path == "/api/opendata":
+                box = None
+                if "bbox" in q:
+                    box = [float(v) for v in q["bbox"].split(",")]
+                    if len(box) != 4 or not all(math.isfinite(v) for v in box):
+                        raise ValueError("bbox must be west,south,east,north")
+                return self.send_json(OPENDATA.query([v for v in q.get("src", "").split(",") if v], box))
             if url.path == "/api/download":
                 signed, filename = signed_asset(q.get("collection", ""), q.get("item", ""), q.get("asset", ""))
                 return self.stream(signed, filename)
@@ -741,9 +753,10 @@ def main():
     ap.add_argument("--intel-budget", type=float, default=0.65, metavar="USD",
                     help="default daily spending cap for Intel place extraction (default: 0.65)")
     args = ap.parse_args()
-    global INTEL, AIS
+    global INTEL, AIS, OPENDATA
     INTEL = intel.Intel(ROOT, CACHE, http_get, log, ssl_context=SSL_CTX, daily_budget=args.intel_budget)
     AIS = ais.AIS(ROOT, log, ssl_context=SSL_CTX)
+    OPENDATA = opendata.OpenData(CACHE, http_get, log)
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     httpd.daemon_threads = True
     print("CHEYENNE tracking board  ->  http://%s:%d/   (Ctrl-C to stand down)" % (

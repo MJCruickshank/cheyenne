@@ -3,8 +3,9 @@
 An earth-observation tracking board for open-source investigators of conflict, humanitarian
 crises and natural disasters. An interactive globe shows where imaging satellites are right now,
 what they have already imaged over a place, and what they are scheduled to image next. Free
-imagery can be drawn on the globe or saved to disk, and live fire detections, ship positions,
-weather imagery and Telegram reports can be laid over the same map.
+imagery, from Sentinel and Landsat to the sub-metre disaster releases of Vantor and Planet, can be
+drawn on the globe, turned into a time-lapse or saved to disk, and live fire detections, ship
+positions, weather imagery and Telegram reports can be laid over the same map.
 
 ![The board with Sentinel-2 selected: ground tracks, sensor swaths and the week's planned acquisitions](docs/screenshots/overview.png)
 
@@ -29,8 +30,13 @@ and the core features need no accounts or API keys.
   of imaging satellites: open missions (Sentinel-1, Sentinel-2, Landsat), daily global sensors
   (VIIRS, MODIS), commercial optical and radar operators, and state-run systems. The clock can be
   jumped or accelerated to see where satellites will be.
-- **Archive search.** For Sentinel-2, Sentinel-1 and Landsat 8/9, footprints of every scene taken
-  over a place in a chosen period, on the globe and on a timeline.
+- **Archive search.** For Sentinel-2, Sentinel-1, Landsat 8/9 and NISAR, footprints of every scene
+  taken over a place in a chosen period, on the globe and on a timeline.
+- **Free very-high-resolution releases.** The 30 to 80 cm imagery that Vantor (formerly Maxar) and
+  Planet release free for major disasters, from 2017 onwards, listed by event and drawn on the globe
+  at full resolution.
+- **Time-lapse GIFs.** An animated GIF of one place through every Sentinel-2, Sentinel-1 or Landsat
+  scene in the search window, one frame per date, stamped with date, sensor and credit.
 - **Future passes.** ESA's published acquisition plans for Sentinel-1 and Sentinel-2, and
   predicted passes for every other fleet, computed from current orbits and sensor geometry.
 - **Imagery on the globe.** Any open scene can be rendered in place. Only small tiles inside the
@@ -48,13 +54,15 @@ and the core features need no accounts or API keys.
   draped on the globe and refreshed every five minutes.
 - **Basemaps.** A vector board, or the Esri World Imagery satellite mosaic.
 - **Intel.** Follows public Telegram channels, places each post on the map with an icon for the
-  kind of event, and raises an alert when a new located report arrives.
+  kind of event, and raises an alert when a new located report arrives. Ten ready-made groups of
+  ten channels cover the main regions of conflict and crisis, plus cyber security.
 - **Shareable views.** The address bar records the view, fleet, focus point and time window.
 
 | | |
 | --- | --- |
 | ![Sentinel-2 scene of Khartoum in false-colour infrared with the download list](docs/screenshots/optical.png) Optical: a Sentinel-2 scene in false-colour infrared | ![Sentinel-1 radar scene of ships at anchor off Suez](docs/screenshots/sar.png) Radar: ships at anchor off Suez in a Sentinel-1 scene |
 | ![FIRMS thermal detections across central Africa](docs/screenshots/firms.png) FIRMS thermal detections, last 24 hours | ![Geostationary weather imagery on the globe](docs/screenshots/live.png) Live view from the geostationary weather satellites |
+| ![A Vantor Legion image of the Bhote Koshi valley after the August 2026 flood](docs/screenshots/releases.png) Free releases: a 38 cm Vantor image after the 2026 Nepal flood | ![A Sentinel-2 time-lapse of Khartoum being built in the mission panel](docs/screenshots/timelapse.png) Time-lapse: 21 Sentinel-2 dates over Khartoum |
 
 ## Installation
 
@@ -129,14 +137,21 @@ coordinates are placed on the map.
 2. **Choose an area.** A scan covers the current view once you have zoomed in, or a fixed focus
    point. Set one with `DESIGNATE` and a click on the globe, or type a place name or `lat, lon`
    into `LOCATE`.
-3. **Scan.** For Sentinel-2, Sentinel-1 and Landsat 8/9 the scan lists scenes already acquired in
-   the lookback window (or an explicit date range) under `ACQUIRED`, and upcoming passes under
-   `TASKING`. Footprints appear on the globe and on the timeline along the bottom.
+3. **Scan.** For Sentinel-2, Sentinel-1, Landsat 8/9 and NISAR the scan lists scenes already
+   acquired in the lookback window (or an explicit date range) under `ACQUIRED`, and upcoming passes
+   under `TASKING`. For the Vantor and Planet fleets, `ACQUIRED` lists their free releases from all
+   dates. Footprints appear on the globe and on the timeline along the bottom.
 4. **Open a footprint.** Click one on the globe, in the list or on the timeline. From there you
    can pick a visualisation, `RENDER ON BOARD`, save bands as GeoTIFF, or save the rendering as a
    PNG. Up to six scenes stay on the board at once.
 5. **Move the clock.** The board runs in real time. The buttons in the top bar jump or accelerate
    it, and `RUN CLOCK TO PASS` on an upcoming pass moves the board to that moment.
+6. **Make a time-lapse.** After a Sentinel-2, Sentinel-1 or Landsat scan, the `TIME-LAPSE` section
+   under the results builds a GIF of the focus point (2 to 25 km around it) or of the scanned view
+   (up to 160 km across). Choose the visualisation, width and speed; for Sentinel-1, choose
+   ascending or descending passes so the viewing geometry stays the same. Use the lookback and cloud
+   limit to choose which scenes go in. Frames are cut out and reprojected by the Planetary Computer,
+   so every frame lines up; dates that barely cover the area are left out. `SAVE GIF` keeps it.
 
 Other controls:
 
@@ -147,6 +162,26 @@ Other controls:
   Hover a detection for its details; click it to designate it as the focus and scan for imagery.
 - **Display.** `GRID`, `NIGHT` and `CRT` toggle the graticule, the day/night terminator and the
   scanline effect.
+
+### Free releases and NISAR
+
+- **Vantor WorldView / Legion.** Selecting the fleet lists every disaster with free imagery under
+  `RELEASED EVENTS`; click one to fly there. Zoomed in, `ACQUIRED` lists the images over the view:
+  the Vantor Open Data Program since late 2025, and the Maxar Open Data Program archive from 2017 to
+  2025. Pre-event and post-event images are marked.
+- **Planet SkySat / Pelican.** The same for Planet's Crisis Response releases: SkySat and Pelican
+  (50 to 80 cm) and PlanetScope (3 to 4 m) scenes, before and after each event.
+- **Rendering.** `RENDER ON BOARD` streams the image straight from the provider's cloud-optimised
+  GeoTIFF at full resolution: only the parts on screen are downloaded. Zoom in to see the detail.
+  Each image can also be saved whole (often 0.5 to 1.5 GB). The imagery is licensed CC BY-NC 4.0:
+  non-commercial use only, with credit to Vantor or Planet.
+- **NISAR.** The NASA-ISRO L-band radar, listed under `OPEN ARCHIVE`. The scan finds geocoded
+  backscatter products (GCOV) from the Alaska Satellite Facility, and `RENDER ON BOARD` drapes each
+  product's browse image (about 120 m per pixel, polarisations as colour). The full-resolution HDF5
+  product downloads from the detail panel after a free NASA Earthdata login.
+- The first scan of each release catalogue indexes it in the background (about 20 s for Vantor,
+  40 s for Planet, 2 to 3 minutes for the Maxar archive). The index is kept in `.cache/opendata` and
+  refreshed every six hours (weekly for the archive).
 
 ### What the future footprints mean
 
@@ -216,9 +251,37 @@ What to expect:
 ![The Intel tab: located reports over Ukraine with one report card open](docs/screenshots/intel.png)
 
 The `INTEL` tab in the left panel follows a list of public Telegram channels. While it is
-switched on, the server reads each channel once a minute, keeps the last 24 hours of posts, and
-places each post on the globe where it can be located. A new located report raises an alert card,
-a pulsing ring on the globe and, optionally, a tone.
+switched on, the server reads each channel (busy channels every minute, quiet ones every 3 to 10
+minutes), keeps the last 24 hours of posts, and places each post on the globe where it can be
+located. A new located report raises an alert card, a pulsing ring on the globe and, optionally, a
+tone.
+
+![The channel-group prompt shown when the board opens](docs/screenshots/intel-groups.png)
+
+**Channel groups.** When the board opens it asks which groups of channels to follow, with the
+expected number of posts and cost per day. Untick `ASK WHEN THE BOARD OPENS` to stop the prompt;
+`CHOOSE CHANNEL GROUPS` in the Channels view brings it back. Each group has ten channels, every one
+checked to exist and to be posting in November 2026:
+
+| Group | Coverage |
+| --- | --- |
+| EU | European outlets and the EU's eastern border (Baltics, Belarus, Moldova) |
+| Ukraine / Russia | Ukrainian and Russian official, military and independent channels |
+| Middle East | Israel, Gaza, Lebanon, Syria, Iran, Yemen and the Gulf |
+| South Asia | India, Pakistan, Afghanistan and Bangladesh |
+| East Asia | China, Taiwan, Hong Kong, Japan and the Koreas (mostly Chinese-language international outlets) |
+| North Africa / Sahel | Sudan, Libya, Egypt, the Maghreb and the Sahel |
+| Sub-Saharan Africa | Horn of Africa, East Africa and pan-African outlets |
+| North America | United States and Mexico |
+| South America | Venezuela, Brazil, Argentina, Peru and regional outlets |
+| Cyber / infosec | Attacks, breaches and vulnerabilities worldwide; cyber attacks are placed at the victim |
+
+Every group deliberately mixes official, independent, partisan and state-run sources, including
+armed groups' own channels (for example the Russian Ministry of Defence, the IDF, Sudan's Rapid
+Support Forces and Russia's Africa Corps). Few mainstream Western outlets publish on Telegram, so the
+North America group leans on aggregators and partisan outlets, and the East Asia and South Asia
+groups on international broadcasters. The full lists are in `CHANNEL_GROUPS` in `intel.py`. Channels
+you add yourself are never changed by the group choice.
 
 - **Feed.** Newest first. Filter by channel or group, placed or unplaced, and category (the row
   of icons). Click a row to fly to the report.
@@ -226,8 +289,7 @@ a pulsing ring on the globe and, optionally, a tone.
   `DESIGNATE FOCUS` searches imagery of that place with the selected fleet, `FIRMS` checks for
   thermal detections nearby, and `CLOCK TO` moves the board clock to the time of the post.
 - **Channels.** Add a channel by `@username` or `t.me` link, pause it with its lamp, or remove
-  it. Twenty channels covering the war in Ukraine and the Middle East are followed to start with.
-  They include official, partisan and state-run sources from several sides.
+  it.
 
 **Reports are unverified.** The map shows where a post says something happened, as read by a
 language model. It is not a confirmed event location. A dashed ring means the report could only
@@ -244,9 +306,10 @@ How a post is placed:
 
 Cost, limits and privacy:
 
-- **Cost.** The starting 20 channels produce about 1,100 posts a day, which costs roughly $0.10
-  a day to analyse. Extraction stops for the day at the daily budget (default $0.65; change it in
-  the Channels view or with `--intel-budget`). The tab shows the estimated spend.
+- **Cost.** Analysis costs about $0.09 per 1,000 posts. A typical group produces 200 to 800 posts a
+  day; all ten together about 4,700, or roughly $0.40 a day. Extraction stops for the day at the
+  daily budget (default $0.65; change it in the Channels view or with `--intel-budget`). The tab
+  shows the estimated spend.
 - **Only while watched.** Nothing is fetched or spent unless a browser has the monitor switched
   on. Three minutes after the last browser closes, the server stops; it catches up on reopening.
 - **Public channels only.** The reader uses Telegram's public web preview
@@ -257,14 +320,17 @@ Cost, limits and privacy:
   account is involved. Post text and channel names are sent to Anthropic for analysis. Thumbnails
   load from Telegram's servers when you open a report, and stay blurred until clicked.
 - **Storage.** Your channel list and seven days of posts are kept in `data/intel.db`. The
-  gazetteer (about 130 MB) is downloaded once into `.cache/gazetteer`.
+  gazetteer (every village in 35 countries of conflict or crisis, towns elsewhere; about 150 MB)
+  is built once into `.cache/gazetteer`.
 
 ## Data sources
 
 | Data | Source |
 | --- | --- |
 | Orbital elements | CelesTrak GP data, cached on disk for 3 hours |
-| Acquired scenes, tiles, downloads | Microsoft Planetary Computer (Sentinel-2 L2A, Sentinel-1 GRD, Landsat C2 L2) |
+| Acquired scenes, tiles, downloads, time-lapse frames | Microsoft Planetary Computer (Sentinel-2 L2A, Sentinel-1 GRD, Landsat C2 L2) |
+| NISAR | Alaska Satellite Facility DAAC search API (L2 GCOV); browse images free, products need a NASA Earthdata login |
+| Free very-high-resolution releases | Vantor Open Data Program and Maxar Open Data Program (AWS Open Data), Planet Crisis Response (Source Cooperative); CC BY-NC 4.0 |
 | Tasking plans | ESA Sentinel acquisition plan KML files |
 | Daily global mosaics | NASA GIBS (MODIS, VIIRS) |
 | Fire detections | NASA FIRMS near-real-time files (VIIRS on NOAA-20/21, MODIS on Terra/Aqua), cached for 20 minutes |
@@ -274,10 +340,11 @@ Cost, limits and privacy:
 | Place search | OpenStreetMap Nominatim |
 | Ship positions | aisstream.io (free key); Fintraffic Digitraffic (CC BY 4.0, no key); Open Waters AIS, including BarentsWatch and the Norwegian Coastal Administration (NLOD 2.0) and AISHub (no key); Pelyr (free key, Pelyr Data Licence 2.0) |
 | Intel posts | Public Telegram channel previews (`t.me/s/<channel>`) |
-| Intel place names | GeoNames (CC BY 4.0): every place in 20 countries around the two conflicts, towns over 500 people elsewhere |
+| Intel place names | GeoNames (CC BY 4.0): every place in 35 countries of conflict or crisis, towns over 500 people elsewhere |
 | Intel place extraction | Anthropic API, `claude-haiku-5-5` (optional; needs a login or API key) |
 
-No accounts or API keys are needed for any of these except Intel place extraction and some of the ship feeds.
+No accounts or API keys are needed for any of these except Intel place extraction, some of the ship
+feeds, and full-resolution NISAR products.
 
 ## Limitations
 
@@ -287,7 +354,13 @@ No accounts or API keys are needed for any of these except Intel place extractio
   Asia and the western Pacific show infrared. The whole-globe mosaics update every 3 hours.
 - **The 7-day FIRMS window** downloads about 60 MB on first use and shows the 150,000 strongest
   detections in view; zoom in to see them all.
-- **Downloads are large.** A Sentinel-1 polarisation is roughly 600 MB to 1 GB.
+- **Downloads are large.** A Sentinel-1 polarisation is roughly 600 MB to 1 GB, and a single
+  Vantor or Planet image up to 1.5 GB.
+- **Free releases cover disasters only.** Vantor and Planet release imagery of selected natural
+  disasters and humanitarian crises, not of armed conflicts, and only for the area and dates they
+  choose.
+- **Time-lapses** take one frame per date from the scan's results, up to 60 frames, and are encoded
+  in the browser; a 720-pixel GIF of 20 to 30 frames is about 10 MB.
 - **Local use.** The server has no user accounts or access control. It binds to `127.0.0.1` by
   default; do not expose it to the internet.
 
@@ -297,6 +370,7 @@ No accounts or API keys are needed for any of these except Intel place extractio
 server.py              Local server: static files plus /api (TLE cache, plan parser, FIRMS cache, download proxy)
 intel.py               Intel: Telegram reader, post database, gazetteer, place extraction
 ais.py                 AIS: the four ship feeds, merged ship state, tracks and coverage counts
+opendata.py            Index of the Vantor, Maxar and Planet free-release catalogues
 run.sh                 Starts the server, using .venv when present
 requirements.txt       Optional packages for the AIS and Intel features
 web/catalog.json       Fleets: name patterns, sensor geometry, archive collection, colours
@@ -308,16 +382,18 @@ web/js/                Front end as plain ES modules (no bundler)
   mission.js             right-hand panel and scan controller    ui.js        top bar, roster, pointer
   board.js               per-frame plotting                      timeline.js  bottom timeline
   firms.js               fire-detection overlay                  live.js      geostationary live view
-  intel.js               Intel tab, report markers, cards and alerts
+  intel.js               Intel tab, report markers, cards, alerts and the channel-group prompt
   ais.js                 ship layer, ship card and coverage map
-web/vendor/            MapLibre GL JS 5, satellite.js 5, fonts and their licences (no CDN at runtime)
+  cog.js                 in-browser reader for cloud-optimised GeoTIFFs and geographic images
+  timelapse.js           time-lapse GIF builder
+web/vendor/            MapLibre GL JS 5, satellite.js 5, gifenc, fonts and their licences (no CDN at runtime)
 docs/screenshots/      Images used in this README
 ```
 
 Created at runtime and ignored by git:
 
 ```
-.cache/                Downloaded elements, plans, fire files and the gazetteer (safe to delete)
+.cache/                Downloaded elements, plans, fire files, release indexes and the gazetteer (safe to delete)
 data/                  Intel channel list and stored posts; AIS coverage counts
 .venv/                 Optional Python environment for the AIS and Intel features
 ```
@@ -328,8 +404,8 @@ Extending it:
   Mercator tile source you are licensed to use. A source picker appears once there are two.
 - **Add a fleet.** Add an entry to `web/catalog.json`; `match` is a list of regular expressions
   tested against CelesTrak object names.
-- **Change the starting channels.** Edit `DEFAULT_CHANNELS` in `intel.py`. They are only used to
-  seed a new `data/intel.db`.
+- **Change the channel groups.** Edit `CHANNEL_GROUPS` in `intel.py`. Choosing a group in the
+  start-up prompt adds any of its channels that are missing.
 - **Extend the Intel gazetteer to another region.** Add its country codes to `GAZ_COUNTRIES` in
   `intel.py`, raise `GAZ_VERSION`, and restart; the gazetteer rebuilds on next use.
 
@@ -342,13 +418,15 @@ Cheyenne bundles these third-party components; their licence texts are in
 | --- | --- |
 | [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js) 5.24.1 | BSD 3-Clause |
 | [satellite.js](https://github.com/shashwatak/satellite-js) 5.0.0 | MIT |
+| [gifenc](https://github.com/mattdesl/gifenc) 1.0.3 | MIT |
 | IBM Plex Mono | SIL Open Font License 1.1 |
 | Share Tech Mono | SIL Open Font License 1.1 |
 
 Data is provided by CelesTrak, ESA and the Copernicus programme, USGS, the Microsoft Planetary
 Computer, NASA (GIBS and FIRMS), NOAA, EUMETSAT, OpenFreeMap and OpenStreetMap contributors,
 Esri, GeoNames, aisstream.io, Fintraffic, Open Waters, BarentsWatch and the Norwegian Coastal
-Administration (Kystverket), and Pelyr. Each provider's own terms apply to its data; the board
+Administration (Kystverket), Pelyr, NASA/JPL and ISRO through the Alaska Satellite Facility, Vantor
+(formerly Maxar), and Planet Labs PBC. Each provider's own terms apply to its data; the board
 shows the credits each AIS feed requires while that feed is in use.
 
 Cheyenne is not affiliated with or endorsed by any of these providers, or by Telegram or Anthropic.

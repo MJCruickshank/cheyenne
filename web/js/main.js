@@ -13,6 +13,7 @@ import { initAis, setAis, ais } from './ais.js';
 import { IMAGERY } from './basemap.js';
 import { LIVE } from './live.js';
 import { currentAOI } from './archive.js';
+import { installProtocol } from './cog.js';
 import { initLamps, setLamp, bootLine, bootDone } from './hud.js';
 import { getJSON, toast } from './util.js';
 
@@ -85,6 +86,7 @@ async function boot() {
 
   initMission();
   initTimeline();
+  installProtocol();
   initFirms();
   initAis();
   initUI();

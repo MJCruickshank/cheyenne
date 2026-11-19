@@ -39,7 +39,7 @@ PRICE_IN, PRICE_OUT = 0.10, 0.50        # USD per million tokens (prompts under 
 BATCH = 8                                # posts per model request
 WINDOW = 24 * 3600                       # posts newer than this are shown
 RETAIN = 7 * 86400                       # posts older than this are deleted
-POLL_EVERY = 60                          # seconds between checks of one channel
+POLL_FAST, POLL_SLOW, POLL_IDLE = 60, 180, 600   # seconds between checks: busy, quiet and silent channels
 CLIENT_TTL = 180                         # stop polling this long after the last browser request
 FRESH_AGE = 30 * 60                      # only posts this recent can raise an alert
 MAX_BACKFILL_PAGES = 40                  # 20 posts per page
@@ -47,26 +47,73 @@ MAX_BACKFILL_PAGES = 40                  # 20 posts per page
 TG_AGENT = "Mozilla/5.0 (compatible)"
 CHANNEL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{3,31}$")
 
-DEFAULT_CHANNELS = [
-    # (username, group)
-    ("kpszsu", "UKRAINE"), ("GeneralStaffZSU", "UKRAINE"), ("DeepStateUA", "UKRAINE"),
-    ("suspilnenews", "UKRAINE"), ("Tsaplienko", "UKRAINE"), ("UkraineNow", "UKRAINE"),
-    ("mod_russia", "UKRAINE"), ("rybar", "UKRAINE"), ("boris_rozhin", "UKRAINE"), ("astrapress", "UKRAINE"),
-    ("manniefabian", "MIDDLE EAST"), ("idfofficial", "MIDDLE EAST"), ("englishabuali", "MIDDLE EAST"),
-    ("CumtaAlertsEnglishChannel", "MIDDLE EAST"), ("QudsNen", "MIDDLE EAST"), ("ajanews", "MIDDLE EAST"),
-    ("Alhadath_Brk", "MIDDLE EAST"), ("Middle_East_Spectator", "MIDDLE EAST"), ("warmonitors", "MIDDLE EAST"),
-    ("bintjbeilnews", "MIDDLE EAST"),
+# Starting channel groups. Every channel was checked to exist, to have a public web preview and to
+# be posting (November 2026). Each list deliberately mixes official, independent, partisan and
+# state-run sources. `est` is the measured number of posts a day for the whole group.
+CHANNEL_GROUPS = [
+    {"id": "eu", "label": "EU", "est": 510, "note": "European outlets and the EU's eastern border (Baltics, Belarus, Moldova)",
+     "channels": [("nexta_live", "NEXTA Live"), ("France24_en", "FRANCE 24 English"), ("tagesschau24", "Tagesschau"),
+                  ("repubblica", "la Repubblica"), ("elpais", "EL PAÍS"), ("dwglavnoe", "DW Главное"),
+                  ("rusdelfi_lv", "Rus.Delfi.lv"), ("baltnews", "BALTNEWS"), ("newsmakerlive", "NewsMaker.md"),
+                  ("zerkalo_io", "Зеркало")]},
+    {"id": "ukraine", "label": "UKRAINE / RUSSIA", "est": 500, "note": "Ukrainian and Russian official, military and independent channels",
+     "channels": [("kpszsu", "Air Force of the Armed Forces of Ukraine"), ("GeneralStaffZSU", "General Staff of the AFU"),
+                  ("DeepStateUA", "DeepState"), ("suspilnenews", "Suspilne News"), ("Tsaplienko", "Tsaplienko"),
+                  ("UkraineNow", "Ukraine NOW"), ("mod_russia", "Russian Ministry of Defence"), ("rybar", "Rybar"),
+                  ("boris_rozhin", "Colonelcassad"), ("astrapress", "ASTRA")]},
+    {"id": "mideast", "label": "MIDDLE EAST", "est": 575, "note": "Israel, Gaza, Lebanon, Syria, Iran, Yemen and the Gulf",
+     "channels": [("manniefabian", "Emanuel Fabian"), ("idfofficial", "IDF"), ("englishabuali", "Abu Ali Express"),
+                  ("CumtaAlertsEnglishChannel", "Cumta red alerts"), ("QudsNen", "Quds News Network"),
+                  ("ajanews", "Al Jazeera"), ("Alhadath_Brk", "Al Hadath breaking"),
+                  ("Middle_East_Spectator", "Middle East Spectator"), ("warmonitors", "War Monitor"),
+                  ("bintjbeilnews", "Bint Jbeil News")]},
+    {"id": "southasia", "label": "SOUTH ASIA", "est": 460, "note": "India, Pakistan, Afghanistan and Bangladesh",
+     "channels": [("hindustantimes", "Hindustan Times"), ("ThePrintIndia", "ThePrint"), ("livemint", "Mint"),
+                  ("OsntTV", "OsntTV"), ("MeghUpdates", "Megh Updates"), ("Diplomatic_Talk", "Diplomatic Talk"),
+                  ("afintl", "Afghanistan International"), ("AfghanistanInternational", "Afghanistan International (Persian)"),
+                  ("TheBalochistanPost", "The Balochistan Post"), ("TheDailyStar", "The Daily Star (Bangladesh)")]},
+    {"id": "eastasia", "label": "EAST ASIA", "est": 700, "note": "China, Taiwan, Hong Kong, Japan and the Koreas",
+     "channels": [("voachinese", "VOA Chinese"), ("zaobaosg", "Lianhe Zaobao"), ("RFI_Cn", "RFI Chinese"),
+                  ("theinitiumnews", "Initium Media"), ("xhnews", "Xinhua"), ("scmpnews", "South China Morning Post"),
+                  ("hongkongfp", "Hong Kong Free Press"), ("nhkworld", "NHK World News"), ("kyodo_news", "Kyodo News (Chinese)"),
+                  ("cna_tw", "Central News Agency (Taiwan)")]},
+    {"id": "nafrica", "label": "NORTH AFRICA / SAHEL", "est": 500, "note": "Sudan, Libya, Egypt, the Maghreb and the Sahel",
+     "channels": [("nanafrica", "Northern Africa News"), ("RSFSudan", "Rapid Support Forces"), ("AlQaheranews", "AlQahera News"),
+                  ("hespress", "Hespress"), ("lefaso", "LeFaso.net"), ("TheAfricanCorps", "The African Corps"),
+                  ("africaintel", "Africa Intel"), ("RFI_Fr", "RFI"), ("Alarabiya", "Al Arabiya"), ("ourwarstoday", "Our Wars, Today")]},
+    {"id": "ssafrica", "label": "SUB-SAHARAN AFRICA", "est": 200, "note": "Horn of Africa, East Africa and pan-African outlets",
+     "channels": [("tikvahethiopia", "Tikvah Ethiopia"), ("EBCNEWSNOW", "Ethiopian Broadcasting Corporation"),
+                  ("fanatelevision", "Fana Media"), ("AddisstandardEng", "Addis Standard"), ("Esat_tv1", "ESAT"),
+                  ("BBCAmharic_Revives", "BBC Amharic"), ("thestarkenya", "The Star Kenya"), ("allafrica", "AllAfrica"),
+                  ("sputnik_africa", "Sputnik Africa"), ("africanewsfr", "Africanews Français")]},
+    {"id": "namerica", "label": "NORTH AMERICA", "est": 220, "note": "United States and Mexico (few mainstream US outlets publish on Telegram)",
+     "channels": [("insiderpaper", "Insider Paper"), ("rnintel", "Rerum Novarum"), ("disclosetv", "Disclose.tv"),
+                  ("epochtimes", "The Epoch Times"), ("NTDNews", "NTD"), ("Newsmax", "Newsmax"),
+                  ("ElUniversalOnline", "El Universal"), ("sinembargomx", "SinEmbargo"), ("latinus_us", "Latinus"),
+                  ("animalpolitico", "Animal Político")]},
+    {"id": "samerica", "label": "SOUTH AMERICA", "est": 800, "note": "Venezuela, Brazil, Argentina, Peru and regional outlets",
+     "channels": [("teleSUR_tv", "teleSUR"), ("elpitazo", "El Pitazo"), ("runrunes", "Runrun.es"), ("CNNBRASIL", "CNN Brasil"),
+                  ("Metropoles", "Metrópoles"), ("Poder360", "Poder360"), ("pagina12", "Página|12"),
+                  ("InfobaeAmerica", "Infobae América"), ("France24_es", "FRANCE 24 Español"), ("elcomerciope", "El Comercio (Peru)")]},
+    {"id": "cyber", "label": "CYBER / INFOSEC", "est": 180, "note": "Cyber attacks, breaches and vulnerabilities worldwide; most posts have no map location",
+     "channels": [("thehackernews", "The Hacker News"), ("BleepingComputer", "BleepingComputer"), ("vxunderground", "vx-underground"),
+                  ("true_secator", "SecAtor"), ("Russian_OSINT", "Russian OSINT"), ("SecLabNews", "SecurityLab.ru"),
+                  ("dsszzi_official", "SSSCIP Ukraine"), ("cKure", "cKure"), ("Cyber_Security_Channel", "Cyber Security News"),
+                  ("cibsecurity", "Cybersecurity & Privacy News")]},
 ]
+GROUP_BY_ID = {g["id"]: g for g in CHANNEL_GROUPS}
+OLD_GROUP_LABELS = {"UKRAINE": "UKRAINE / RUSSIA"}       # labels used by earlier versions
 
 CATEGORIES = ["strike", "drone", "shelling", "explosion", "air_defence", "alert", "ground", "movement",
-              "naval", "raid", "infrastructure", "fire", "disaster", "unrest", "humanitarian", "other"]
+              "naval", "raid", "infrastructure", "fire", "disaster", "unrest", "humanitarian", "crime", "cyber", "other"]
 KINDS = ["site", "settlement", "district", "region", "country", "sea"]
 
 # Countries whose full GeoNames file is loaded (every village). Elsewhere only places over 500 people.
 GAZ_COUNTRIES = ["UA", "RU", "BY", "MD", "IL", "PS", "LB", "SY", "IQ", "IR", "YE", "JO", "EG", "SA", "TR",
-                 "KW", "QA", "AE", "BH", "OM"]
+                 "KW", "QA", "AE", "BH", "OM",
+                 "SD", "SS", "LY", "TD", "ML", "BF", "NE", "SO", "ET", "ER", "CD", "CF", "AF", "MM", "HT"]
 GEONAMES = "https://download.geonames.org/export/dump/"
-GAZ_VERSION = 1
+GAZ_VERSION = 2
 
 SYSTEM = """You turn Telegram channel posts about armed conflicts and crises into structured map data for an open-source monitoring board. Analysts use the board to see where things are being reported and to look for satellite imagery of those places, so the location of each event matters more than anything else.
 
@@ -74,10 +121,11 @@ You receive a batch of posts. Each is wrapped in <post id="N" channel="..." time
 
 For each post decide:
 
-event: true when the post reports something concrete that happened, is happening or is warned as imminent at a nameable place: strikes, missiles or drones in flight, shelling, explosions, air-raid alerts, clashes, territorial changes, troop or equipment movements, raids and arrests, damage to infrastructure, fires, disasters, protests, evacuations, aid deliveries. false for commentary, analysis, political or diplomatic statements, court cases, legislation, appointments, interviews, culture, sport, business and science news, casualty tallies and daily summaries with no specific place, fundraising, advertising, jokes and channel housekeeping.
+event: true when the post reports something concrete that happened, is happening or is warned as imminent at a nameable place: strikes, missiles or drones in flight, shelling, explosions, air-raid alerts, clashes, territorial changes, troop or equipment movements, raids and arrests, damage to infrastructure, fires, disasters, protests, evacuations, aid deliveries, violent crime, cyber attacks and data breaches against a named organisation. false for commentary, analysis, political or diplomatic statements, court cases, legislation, appointments, interviews, culture, sport, business and science news, casualty tallies and daily summaries with no specific place, fundraising, advertising, jokes and channel housekeeping.
 
 places: where the event is happening, most important first, at most 5. Leave the list empty when event is false or no place can be named.
 - Give the place of the event itself, never the place where a statement was made, where a weapon was launched from, or a place mentioned only as background. For a threat in flight ("drones from Bryansk region heading for northern Chernihiv region") give the destination.
+- For a cyber attack or data breach, give where the targeted organisation or infrastructure is: its city when stated (a hospital in Lyon, a port in Rotterdam), otherwise its country. Never give the attackers' supposed location. A vulnerability, malware analysis or advisory with no named victim has no place.
 - When a post lists many settlements, such as a front-line digest, give the 5 most significant.
 - When you give a specific place, do not also add the region or country that contains it.
 - name: the common English or romanised name. Settlements without an administrative suffix ("Kramatorsk"); regions with it ("Donetsk Oblast", "Nabatieh Governorate").
@@ -104,6 +152,8 @@ category: the kind of event.
 - disaster: floods, earthquakes, storms and other natural hazards
 - unrest: protests, riots, strikes
 - humanitarian: evacuations, displacement, aid, hospitals, casualties reported with no clear cause
+- crime: shootings, killings, kidnappings, cartel and gang violence outside an armed conflict
+- cyber: cyber attacks, ransomware, data breaches, DDoS, defacements and network outages blamed on attackers
 - other: anything else, and every post where event is false
 
 summary: one English sentence of at most 25 words in neutral wire-service style. These are unverified reports, so attribute contested claims ("Russian MoD claims...", "Local channels report..."). For a post where event is false, a short description of at most 12 words.
@@ -283,17 +333,31 @@ class Gazetteer:
 
     def ensure(self):
         """Open the gazetteer, building it in the background on first use."""
-        if self.ready or self._building:
+        if self._building or (self.ready and self._db_path == self.path):
+            return
+        if self.error and time.time() - self._failed < 900:      # do not retry a failed build on every request
             return
         if os.path.exists(self.path):
-            return self._open()
+            return self._open(self.path)
         self._building = True
+        # An older version keeps placing posts while the new one is built.
+        older = [os.path.join(self.folder, "geonames-v%d.db" % v) for v in range(GAZ_VERSION - 1, 0, -1)]
+        older = next((p for p in older if os.path.exists(p)), None)
+        if older and not self.ready:
+            self._open(older)
         threading.Thread(target=self._build, daemon=True, name="gazetteer").start()
 
-    def _open(self):
-        self._db = sqlite3.connect(self.path, check_same_thread=False)
-        self._admin = dict(self._db.execute("SELECT code, name FROM admin"))
-        count = self._db.execute("SELECT COUNT(*) FROM place").fetchone()[0]
+    _db_path = None
+    _failed = 0.0
+
+    def _open(self, path):
+        db = sqlite3.connect(path, check_same_thread=False)
+        admin = dict(db.execute("SELECT code, name FROM admin"))
+        count = db.execute("SELECT COUNT(*) FROM place").fetchone()[0]
+        with self._lock:
+            old, self._db, self._admin, self._db_path = self._db, db, admin, path
+        if old is not None:
+            old.close()
         self.ready, self.note = True, "%d PLACES" % count
 
     def _download(self, name):
@@ -318,13 +382,14 @@ class Gazetteer:
                 " cc TEXT, a1 TEXT, pop INTEGER);"
                 "CREATE TABLE alias(key TEXT, id INTEGER, PRIMARY KEY(key, id)) WITHOUT ROWID;"
                 "CREATE TABLE admin(code TEXT PRIMARY KEY, name TEXT);")
-            self.note = "DOWNLOADING GAZETTEER"
+            busy = lambda text: None if self.ready else setattr(self, "note", text)   # keep the old count while it serves
+            busy("DOWNLOADING GAZETTEER")
             with open(self._download("admin1CodesASCII.txt"), encoding="utf-8") as f:
                 db.executemany("INSERT OR IGNORE INTO admin VALUES(?,?)",
                                [(r[0], r[1]) for r in csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE) if len(r) > 1])
             files = [c + ".zip" for c in GAZ_COUNTRIES] + ["cities500.zip"]
             for i, name in enumerate(files):
-                self.note = "BUILDING GAZETTEER %d/%d" % (i + 1, len(files))
+                busy("BUILDING GAZETTEER %d/%d" % (i + 1, len(files)))
                 self._load(db, self._download(name), full=name != "cities500.zip")
             db.commit()
             db.close()
@@ -334,10 +399,17 @@ class Gazetteer:
                     os.remove(os.path.join(self.folder, name))
                 except OSError:
                     pass
-            self._open()
+            self._open(self.path)
+            for v in range(1, GAZ_VERSION):           # earlier versions are superseded
+                try:
+                    os.remove(os.path.join(self.folder, "geonames-v%d.db" % v))
+                except OSError:
+                    pass
             self.log("gazetteer ready:", self.note.lower())
         except Exception as e:
-            self.error, self.note = str(e), "GAZETTEER UNAVAILABLE"
+            self.error, self._failed = str(e), time.time()
+            if not self.ready:
+                self.note = "GAZETTEER UNAVAILABLE"
             self.log("gazetteer build failed:", repr(e))
         finally:
             self._building = False
@@ -457,6 +529,8 @@ class Intel:
         self.backfill = []                # [channel, before id, stop at id, pages left]
         self.due = {}                     # channel -> next poll time
         self.fails = {}                   # channel -> consecutive failures
+        self.rates = {}                   # channel -> posts in the last 24 h, for pacing the polls
+        self.pause_until = 0.0            # Telegram asked us to slow down
         self.work = threading.Event()
         self.llm, self.llm_error, self.llm_retry = None, None, 0.0
         self.busy = 0
@@ -479,10 +553,16 @@ class Intel:
                 "CREATE TABLE IF NOT EXISTS usage(day TEXT PRIMARY KEY, input INTEGER, output INTEGER, requests INTEGER, cost REAL);"
                 "CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);")
             if self._meta("seeded") is None:
-                now = time.time()
-                self.db.executemany("INSERT OR IGNORE INTO channel(name, title, grp, added) VALUES(?,?,?,?)",
-                                    [(n, n, g, now) for n, g in DEFAULT_CHANNELS])
-                self._set_meta("seeded", "1")
+                # First run: nothing is followed until groups are chosen in the start-up prompt.
+                self._set_meta("seeded", "2")
+                self._set_meta("groups", "[]")
+            elif self._meta("groups") is None:
+                # A database from an earlier version, seeded with the Ukraine and Middle East lists.
+                for old, new in OLD_GROUP_LABELS.items():
+                    self.db.execute("UPDATE channel SET grp=? WHERE grp=?", (new, old))
+                chosen = [g["id"] for g in CHANNEL_GROUPS if self.db.execute(
+                    "SELECT 1 FROM channel WHERE grp=? AND muted=0 LIMIT 1", (g["label"],)).fetchone()]
+                self._set_meta("groups", json.dumps(chosen))
             self.db.execute("UPDATE post SET status='new' WHERE status='busy'")
             try:                                        # unfinished paging from the last session
                 self.backfill = [t for t in json.loads(self._meta("backfill", "[]")) if isinstance(t, list) and len(t) == 4]
@@ -620,14 +700,26 @@ class Intel:
                 self.log("intel: backfill loop error -", repr(e))
                 time.sleep(5)
 
+    def _interval(self, name):
+        """Seconds until a channel's next check: busy channels every minute, quiet ones less often."""
+        per_day = self.rates.get(name)
+        if per_day is None or per_day >= 24:
+            return POLL_FAST
+        return POLL_SLOW if per_day >= 4 else POLL_IDLE
+
     def _poll_loop(self):
-        last_prune = 0
+        last_prune = last_rates = 0
         while True:
             try:
-                if not self.active():
+                if not self.active() or time.time() < self.pause_until:
                     time.sleep(2)
                     continue
                 now = time.time()
+                if now - last_rates > 300:
+                    last_rates = now
+                    with self.lock:
+                        self.rates = dict(self.db.execute(
+                            "SELECT channel, COUNT(*) FROM post WHERE ts > ? GROUP BY channel", (now - 86400,)))
                 with self.lock:
                     chans = self.db.execute("SELECT name, last_id FROM channel WHERE muted=0 ORDER BY rowid").fetchall()
                 ready = [(self.due.get(n, 0), n, last) for n, last in chans if self.due.get(n, 0) <= now]
@@ -636,10 +728,16 @@ class Intel:
                     try:
                         self._poll_channel(name, last_id)
                         self.fails[name] = 0
-                        self.due[name] = time.time() + POLL_EVERY
+                        if last_id is None or name not in self.rates:
+                            with self.lock:
+                                self.rates[name] = self.db.execute(
+                                    "SELECT COUNT(*) FROM post WHERE channel=? AND ts > ?", (name, now - 86400)).fetchone()[0]
+                        self.due[name] = time.time() + self._interval(name)
                     except Exception as e:
                         n = self.fails[name] = self.fails.get(name, 0) + 1
-                        self.due[name] = time.time() + min(900, POLL_EVERY * 2 ** n)
+                        self.due[name] = time.time() + min(900, POLL_FAST * 2 ** n)
+                        if isinstance(e, urllib.error.HTTPError) and e.code == 429:
+                            self.pause_until = time.time() + 90         # too many requests: back off everywhere
                         msg = str(e) if isinstance(e, LookupError) else "HTTP %s" % e.code if isinstance(e, urllib.error.HTTPError) else "UNREACHABLE"
                         with self.lock:
                             self.db.execute("UPDATE channel SET error=? WHERE name=?", (msg, name))
@@ -838,6 +936,57 @@ class Intel:
                        "gazetteer": self.gaz.note},
         }
 
+    def selected_groups(self):
+        try:
+            chosen = json.loads(self._meta("groups", "[]"))
+        except ValueError:
+            chosen = []
+        return [g for g in chosen if g in GROUP_BY_ID]
+
+    def groups_info(self):
+        """The starting channel groups, which of them are followed, and whether to ask at start-up."""
+        with self.lock:
+            chosen = set(self.selected_groups())
+            ask = self._meta("ask", "1") == "1"
+            labels = {g["label"] for g in CHANNEL_GROUPS}
+            custom = self.db.execute("SELECT COUNT(*) FROM channel WHERE muted=0 AND grp NOT IN (%s)" % ",".join("?" * len(labels)),
+                                     sorted(labels)).fetchone()[0]
+        return {
+            "groups": [{"id": g["id"], "label": g["label"], "note": g["note"], "est": g["est"], "selected": g["id"] in chosen,
+                        "channels": [{"name": n, "title": t} for n, t in g["channels"]]} for g in CHANNEL_GROUPS],
+            "ask": ask, "enabled": self.enabled, "custom": custom, "budget": self.budget,
+            "costPerPost": 0.000085,           # measured: about $0.09 for 1,074 posts with MODEL
+        }
+
+    def set_groups(self, wanted, ask):
+        """Follow the chosen groups and pause the channels of the others. Channels added by hand are untouched."""
+        now = time.time()
+        woken = []
+        with self.lock:
+            before = set(self.selected_groups())
+            for g in CHANNEL_GROUPS:
+                for name, title in g["channels"]:
+                    row = self.db.execute("SELECT name, grp, muted FROM channel WHERE lower(name)=lower(?)", (name,)).fetchone()
+                    if g["id"] in wanted:
+                        if not row:
+                            self.db.execute("INSERT INTO channel(name, title, grp, added) VALUES(?,?,?,?)", (name, title, g["label"], now))
+                            woken.append(name)
+                        elif g["id"] not in before and row[2]:
+                            self.db.execute("UPDATE channel SET muted=0 WHERE name=?", (row[0],))
+                            woken.append(row[0])
+                    elif row and row[1] == g["label"] and not row[2]:
+                        self.db.execute("UPDATE channel SET muted=1 WHERE name=?", (row[0],))
+            self._set_meta("groups", json.dumps([g["id"] for g in CHANNEL_GROUPS if g["id"] in wanted]))
+            self._set_meta("ask", "1" if ask else "0")
+            if wanted:
+                self._set_meta("enabled", "1")
+            self.backfill[:] = [t for t in self.backfill if self.db.execute(
+                "SELECT 1 FROM channel WHERE name=? AND muted=0", (t[0],)).fetchone()]
+            self._keep_backfill()
+        for name in woken:
+            self.due[name] = 0
+        self.work.set()
+
     def post_text(self, key):
         with self.lock:
             row = self.db.execute("SELECT text FROM post WHERE key=?", (key,)).fetchone()
@@ -850,6 +999,14 @@ class Intel:
         if action in ("enable", "disable"):
             with self.lock:
                 self._set_meta("enabled", "1" if action == "enable" else "0")
+        elif action == "groups":
+            wanted = body.get("groups")
+            if not isinstance(wanted, list) or not all(isinstance(g, str) and g in GROUP_BY_ID for g in wanted):
+                raise ValueError("unknown channel group")
+            self.set_groups(set(wanted), ask=bool(body.get("ask", True)))
+        elif action == "ask":
+            with self.lock:
+                self._set_meta("ask", "1" if body.get("value") else "0")
         elif action == "budget":
             try:
                 value = float(body.get("value"))

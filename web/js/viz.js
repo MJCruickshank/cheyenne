@@ -89,7 +89,24 @@ export function presetsFor(collection, props = {}) {
   if (collection === 'sentinel-2-l2a') return sentinel2(props);
   if (collection === 'sentinel-1-grd') return sentinel1(props);
   if (collection === 'landsat-c2-l2') return landsat();
+  if (collection === 'opendata') {
+    return [{ id: 'visual', label: 'VISUAL (AS RELEASED)', hint: 'Natural colour at full resolution, read tile by tile from the provider’s cloud-optimised GeoTIFF.' }];
+  }
+  if (collection === 'nisar-gcov') {
+    return [{ id: 'browse', label: 'L-BAND COMPOSITE (BROWSE)', hint: 'NISAR’s own browse image of geocoded backscatter: polarisations as colour, about 120 m per pixel. Full resolution is in the HDF5 product.' }];
+  }
   return [];
+}
+
+/** Collections served by the Planetary Computer (tiles, quicklooks, exports and downloads). */
+export const PC_COLLECTIONS = new Set(['sentinel-2-l2a', 'sentinel-1-grd', 'landsat-c2-l2']);
+
+/**
+ * URL of a rendered PNG of part of a scene, in Web Mercator. Used for time-lapse frames.
+ * bbox is west, south, east, north in degrees.
+ */
+export function cropUrl(collection, item, q, bbox, width, height) {
+  return `${PC}/data/v1/item/bbox/${bbox.map((v) => v.toFixed(5)).join(',')}/${width}x${height}.png?collection=${collection}&item=${encodeURIComponent(item)}&${q}&dst_crs=epsg:3857`;
 }
 
 export const QUALITY = {
