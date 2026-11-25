@@ -9,6 +9,7 @@ import { currentAOI, aoiCentre, searchScenes, fetchPlans, predictAccess, fetchIt
 import { presetsFor, QUALITY, tileTemplate, quicklookUrl, exportUrl, downloadUrl, gibsTemplate, primaryAssets, PC, PC_COLLECTIONS } from './viz.js';
 import { registerRaster, unregisterRaster, zoomForGsd } from './cog.js';
 import { timelapseSection } from './timelapse.js';
+import { compareSection, compareButtons, isCapturing } from './cards.js';
 import { setLamp } from './hud.js';
 import { $, h, DAY, stamp, dtg, tRel, fmtPos, fmtLat, fmtLon, isoDay, toast } from './util.js';
 
@@ -461,9 +462,15 @@ function eventsSection(c) {
 }
 
 function lapseSection(c) {
-  if (!c.archive || !PC_COLLECTIONS.has(c.archive.collection) || tab !== 'acquired' || busy) return null;
+  if (!c.archive || !(PC_COLLECTIONS.has(c.archive.collection) || c.archive.provider === 'asf') || tab !== 'acquired' || busy) return null;
   const scenes = S.results.filter((r) => r.kind === 'scene').sort((a, b) => a.time - b.time);
   return timelapseSection(c, S.resultMeta.aoi, scenes, render);
+}
+
+function cardSection(c) {
+  if (!c.archive || tab !== 'acquired' || busy) return null;
+  const scenes = S.results.filter((r) => r.kind === 'scene');
+  return compareSection(c, S.resultMeta.aoi, scenes, render);
 }
 
 function linksSection(c) {
@@ -622,6 +629,7 @@ function sceneDetail(rec) {
         h('button', { class: 'wide', title: 'Centre the board on this footprint', onclick: () => fitTo(rec.bbox, { maxZoom: rec.collection === 'opendata' ? 14 : 10 }) }, 'GO TO'),
       ),
     ),
+    compareButtons(rec, preset.id, render, S.resultMeta.aoi),
     onBoardSection(),
     h('div', { class: 'sect' }, h('h3', null, 'DOWNLOAD TO DISK', h('span', null, dlTitle)), downloads),
     h('div', { class: 'sect' }, h('h3', null, 'SOURCE RECORD'), h('div', { class: 'links' }, sources)),
@@ -683,7 +691,7 @@ export function render() {
     body.replaceChildren(...[
       factsSection(c), satsSection(c), c.gibs ? gibsSection(c) : null,
       canScan(c) ? scanSection(c) : null, onBoardSection(), eventsSection(c), canScan(c) ? resultsSection(c) : null,
-      lapseSection(c), linksSection(c),
+      lapseSection(c), cardSection(c), linksSection(c),
     ].flat(Infinity).filter(Boolean));
     paintSatPositions();
   }
@@ -720,6 +728,7 @@ export function initMission() {
   });
   on('tick', () => { if (view === 'main') paintSatPositions(); });
   map.on('moveend', () => {
+    if (isCapturing()) return;                  // a share card briefly moving the camera
     if (S.active && S.aoiMode === 'view' && !busy && !S.follow && canScan(con())) {
       const was = S.resultMeta.aoi;
       const nowAoi = currentAOI();

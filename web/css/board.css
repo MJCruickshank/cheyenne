@@ -457,7 +457,7 @@ details > summary:hover { color: var(--ink-hi); }
 #picker { width: 250px; max-height: 300px; z-index: 55; }
 #picker .res { grid-template-columns: 34px 1fr; }
 #picker .facts { padding: 8px 10px; }
-#picker .btnrow { padding: 0 10px 10px; margin: 0; }
+#picker .btnrow { padding: 0 10px 10px; margin: 0; flex-wrap: wrap; }
 
 #toasts { position: fixed; z-index: 70; top: calc(var(--top) + 12px); left: 50%; transform: translateX(-50%); display: grid; gap: 6px; justify-items: center; pointer-events: none; }
 .toast {
@@ -512,6 +512,29 @@ details > summary:hover { color: var(--ink-hi); }
 .tl-preview img { display: block; width: 100%; height: auto; image-rendering: auto; }
 .tl-prog { height: 3px; background: var(--line); margin: 6px 0 2px; }
 .tl-prog i { display: block; height: 100%; width: 0; background: var(--amber); transition: width 0.2s; }
+
+/* ---------------------------------------------------------------- share cards */
+.card-box { width: min(1240px, 100%); max-height: min(860px, calc(100vh - 32px)); }
+.c-body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; align-items: start; }
+.c-preview { display: grid; justify-items: center; gap: 6px; min-height: 200px; }
+.c-preview img { display: block; max-width: 100%; max-height: calc(min(860px, 100vh - 32px) - 175px); width: auto; height: auto; border: 1px solid var(--line); background: #000; }
+.c-preview img:not([src]) { display: none; }
+.c-status { justify-self: start; padding: 2px 7px; border: 1px solid var(--amber-dim); color: var(--amber); font-size: 10.5px; }
+.c-status.done { border-color: var(--line); color: var(--ink-dim); }
+.c-status.err { border-color: var(--red); color: var(--red); }
+.c-side .ctl { grid-template-columns: 70px 1fr; }
+.c-side input[type=text] { width: 100%; }
+.c-check { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 10.5px; }
+.c-check input { accent-color: var(--ink); }
+.c-post { display: grid; gap: 5px; margin-top: 12px; }
+.c-post .k { color: var(--ink-dim); font-size: 10px; }
+.c-post textarea {
+  width: 100%; resize: vertical; min-height: 110px; padding: 6px; background: rgba(0, 0, 0, 0.35); border: 1px solid var(--line);
+  color: var(--ink-hi); font: 400 11px/1.45 var(--mono); letter-spacing: 0.02em; text-transform: none;
+}
+.c-post textarea:focus { outline: 1px solid var(--line-hi); }
+.c-post button { justify-self: start; }
+@media (max-width: 900px) { .c-body { grid-template-columns: 1fr; } }
 
 @media (max-width: 1440px) {
   .brand-sub { display: none; }

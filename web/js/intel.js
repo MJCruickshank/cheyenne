@@ -8,6 +8,7 @@ import { ANCHOR_OVERLAY, INK } from './basemap.js';
 import { setTarget } from './mission.js';
 import { setFirms } from './firms.js';
 import { setLamp, placePicker, closePicker } from './hud.js';
+import { openAlertCard } from './cards.js';
 import { $, h, getJSON, stamp, hms, fmtPos, toast, destination } from './util.js';
 
 const POLL_MS = 15000;
@@ -377,8 +378,21 @@ function postDetail(p, place, back) {
     pt ? h('div', { class: 'btnrow' },
       h('button', { class: 'primary', title: 'Search imagery of this place with the selected fleet', onclick: () => { closePicker(); setTarget(pt); toast(`FOCUS DESIGNATED ${fmtPos(pt, 3)}`); } }, 'DESIGNATE FOCUS'),
       h('button', { title: 'Move the board clock to the time of the post', onclick: () => { closePicker(); clock.set(p.t); } }, 'CLOCK TO'),
-      HOT.includes(catOf(p)) && place.prec !== 'region' ? h('button', { title: 'Look for NASA FIRMS thermal detections near this place', onclick: (e) => checkFirms(e.currentTarget) }, 'FIRMS') : '') : '',
+      HOT.includes(catOf(p)) && place.prec !== 'region' ? h('button', { title: 'Look for NASA FIRMS thermal detections near this place', onclick: (e) => checkFirms(e.currentTarget) }, 'FIRMS') : '',
+      h('button', { title: 'Make an image for social media: this report on the map as it is drawn now', onclick: () => shareCard(p, place) }, 'SHARE CARD')) : '',
   ];
+}
+
+function shareCard(p, place) {
+  const def = CATS[catOf(p)], ch = channelOf(p.ch);
+  openAlertCard({
+    label: def.label, color: def.color, iconUrl: iconUrl[catOf(p)],
+    place: place.name.toUpperCase(), placeLine: placeLine(place).toUpperCase(),
+    precision: `${PREC[place.prec]}${place.approx ? ' (ESTIMATE)' : ''}`,
+    pt: [place.lon, place.lat], t: p.t,
+    channel: ch ? `${ch.title} (@${p.ch})` : `@${p.ch}`, link: `https://t.me/${p.ch}/${p.id}`,
+    summary: (p.sum || p.x || '').toUpperCase(), conf: p.conf ? `${p.conf} (MODEL'S OWN RATING)`.toUpperCase() : '',
+  });
 }
 
 function show(nodes, x, y) {

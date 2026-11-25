@@ -5,7 +5,8 @@ crises and natural disasters. An interactive globe shows where imaging satellite
 what they have already imaged over a place, and what they are scheduled to image next. Free
 imagery, from Sentinel and Landsat to the sub-metre disaster releases of Vantor and Planet, can be
 drawn on the globe, turned into a time-lapse or saved to disk, and live fire detections, ship
-positions, weather imagery and Telegram reports can be laid over the same map.
+positions, weather imagery and Telegram reports can be laid over the same map. Any report on the
+map, or any pair of images, can be turned into a card ready to post on social media.
 
 ![The board with Sentinel-2 selected: ground tracks, sensor swaths and the week's planned acquisitions](docs/screenshots/overview.png)
 
@@ -35,8 +36,11 @@ and the core features need no accounts or API keys.
 - **Free very-high-resolution releases.** The 30 to 80 cm imagery that Vantor (formerly Maxar) and
   Planet release free for major disasters, from 2017 onwards, listed by event and drawn on the globe
   at full resolution.
-- **Time-lapse GIFs.** An animated GIF of one place through every Sentinel-2, Sentinel-1 or Landsat
-  scene in the search window, one frame per date, stamped with date, sensor and credit.
+- **Time-lapse GIFs.** An animated GIF of one place through every Sentinel-2, Sentinel-1, Landsat
+  or NISAR scene in the search window, one frame per date, stamped with date, sensor and credit.
+- **Share cards.** PNG images for social media in the board's own style: an Intel report on the
+  map with whatever imagery, fire detections and ships are drawn there, or a before / after pair
+  of scenes (from any fleets) with their dates and sensors. Three sizes, with suggested post text.
 - **Future passes.** ESA's published acquisition plans for Sentinel-1 and Sentinel-2, and
   predicted passes for every other fleet, computed from current orbits and sensor geometry.
 - **Imagery on the globe.** Any open scene can be rendered in place. Only small tiles inside the
@@ -146,12 +150,17 @@ coordinates are placed on the map.
    PNG. Up to six scenes stay on the board at once.
 5. **Move the clock.** The board runs in real time. The buttons in the top bar jump or accelerate
    it, and `RUN CLOCK TO PASS` on an upcoming pass moves the board to that moment.
-6. **Make a time-lapse.** After a Sentinel-2, Sentinel-1 or Landsat scan, the `TIME-LAPSE` section
-   under the results builds a GIF of the focus point (2 to 25 km around it) or of the scanned view
-   (up to 160 km across). Choose the visualisation, width and speed; for Sentinel-1, choose
-   ascending or descending passes so the viewing geometry stays the same. Use the lookback and cloud
-   limit to choose which scenes go in. Frames are cut out and reprojected by the Planetary Computer,
-   so every frame lines up; dates that barely cover the area are left out. `SAVE GIF` keeps it.
+6. **Make a time-lapse.** After a Sentinel-2, Sentinel-1, Landsat or NISAR scan, the `TIME-LAPSE`
+   section under the results builds a GIF of the focus point (2 to 25 km around it) or of the
+   scanned view (up to 160 km across). Choose the visualisation, width and speed; for the radars
+   (Sentinel-1 and NISAR), choose ascending or descending passes so the viewing geometry stays the
+   same. Use the lookback and cloud limit to choose which scenes go in. Frames are reprojected to
+   the same grid, so every frame lines up; dates that barely cover the area are left out. `SAVE GIF`
+   keeps it. NISAR frames are cut from each product's browse image (about 120 m per pixel, about
+   4 MB to fetch each), so a 10 km or wider radius works best, and brightness varies between dates
+   because each browse image is contrast-stretched on its own.
+7. **Make a share card.** `SHARE CARD` on an Intel report, or the `BEFORE / AFTER` section under
+   the scan results, makes a PNG for social media. See [Share cards](#share-cards).
 
 Other controls:
 
@@ -162,6 +171,33 @@ Other controls:
   Hover a detection for its details; click it to designate it as the focus and scan for imagery.
 - **Display.** `GRID`, `NIGHT` and `CRT` toggle the graticule, the day/night terminator and the
   scanline effect.
+
+### Share cards
+
+| | |
+| --- | --- |
+| ![Alert card: an unverified Telegram claim of a strike at Ras Tanura, Saudi Arabia, on the imagery basemap beside the report text](docs/screenshots/card-alert.png) Alert card: an unverified claim from a Telegram channel, on the imagery basemap | ![Before / after card: two Sentinel-2 images of a storage-tank site on the Saudi Red Sea coast, three days apart, the second with a smoke plume](docs/screenshots/card-before-after.png) Before / after card: two Sentinel-2 images three days apart |
+
+Cards are PNG images drawn in the board's own style, for posting on social media.
+
+- **Alert card.** `SHARE CARD` on a placed Intel report captures the board around it as it is
+  drawn now, so switch on FIRMS or AIS, or render a scene, first to include them. Beside the map go
+  the report text, source, time and place, counts of the fire detections, ships and other reports
+  in the picture, the scenes shown, and a notice that the report is unverified. `MAP` widens or
+  tightens the picture. The board's focus marker, scan outline and footprints are left out.
+- **Before / after card.** Two scenes of the same area side by side (stacked in the taller sizes),
+  each with its date, time, sensor, visualisation, resolution and cloud cover. The `BEFORE / AFTER`
+  section under the scan results picks them: by default the clearest older and newer scenes, or
+  the newest pre- and post-event images of a free release. Any scene's detail also has
+  `SET AS BEFORE` and `SET AS AFTER`, so the two can come from different fleets, for example
+  Sentinel-2 before and Vantor after. Each image is fetched afresh at card resolution over the same
+  area, centred on the focus point or the scanned area; `AREA` sets its size. Same-day scenes are
+  stitched, and the card always reads in date order.
+- **Options.** Three sizes (16:9, 1:1 and 4:5), an optional headline and the scanline effect.
+  Each card comes with suggested post text, including the credits. `SAVE PNG`, `COPY IMAGE` and,
+  where the browser offers it, `SHARE…` send it on.
+- **Credits and licences.** Every card credits its data along the bottom. Cards that include
+  Vantor, Maxar or Planet imagery also say that it is licensed for non-commercial use only.
 
 ### Free releases and NISAR
 
@@ -177,8 +213,11 @@ Other controls:
   non-commercial use only, with credit to Vantor or Planet.
 - **NISAR.** The NASA-ISRO L-band radar, listed under `OPEN ARCHIVE`. The scan finds geocoded
   backscatter products (GCOV) from the Alaska Satellite Facility, and `RENDER ON BOARD` drapes each
-  product's browse image (about 120 m per pixel, polarisations as colour). The full-resolution HDF5
-  product downloads from the detail panel after a free NASA Earthdata login.
+  product's browse image (about 120 m per pixel, polarisations as colour), or the `TIME-LAPSE`
+  section animates them. The full-resolution HDF5 product downloads from the detail panel after a
+  free NASA Earthdata login. Products from the provisional release (before October 2026) publish
+  their browse georeference only behind that login, so the board positions those browse images
+  from the product footprint instead, to within about one browse pixel.
 - The first scan of each release catalogue indexes it in the background (about 20 s for Vantor,
   40 s for Planet, 2 to 3 minutes for the Maxar archive). The index is kept in `.cache/opendata` and
   refreshed every six hours (weekly for the archive).
@@ -288,6 +327,7 @@ you add yourself are never changed by the group choice.
 - **A report.** Shows an English summary, the source post, where it was placed and how precisely.
   `DESIGNATE FOCUS` searches imagery of that place with the selected fleet, `FIRMS` checks for
   thermal detections nearby, and `CLOCK TO` moves the board clock to the time of the post.
+  `SHARE CARD` makes an image of the report on the map (see [Share cards](#share-cards)).
 - **Channels.** Add a channel by `@username` or `t.me` link, pause it with its lamp, or remove
   it.
 
@@ -329,7 +369,7 @@ Cost, limits and privacy:
 | --- | --- |
 | Orbital elements | CelesTrak GP data, cached on disk for 3 hours |
 | Acquired scenes, tiles, downloads, time-lapse frames | Microsoft Planetary Computer (Sentinel-2 L2A, Sentinel-1 GRD, Landsat C2 L2) |
-| NISAR | Alaska Satellite Facility DAAC search API (L2 GCOV); browse images free, products need a NASA Earthdata login |
+| NISAR | Alaska Satellite Facility DAAC search API (L2 GCOV); browse images (board and time-lapse) free, products need a NASA Earthdata login |
 | Free very-high-resolution releases | Vantor Open Data Program and Maxar Open Data Program (AWS Open Data), Planet Crisis Response (Source Cooperative); CC BY-NC 4.0 |
 | Tasking plans | ESA Sentinel acquisition plan KML files |
 | Daily global mosaics | NASA GIBS (MODIS, VIIRS) |
@@ -361,6 +401,9 @@ feeds, and full-resolution NISAR products.
   choose.
 - **Time-lapses** take one frame per date from the scan's results, up to 60 frames, and are encoded
   in the browser; a 720-pixel GIF of 20 to 30 frames is about 10 MB.
+- **Share cards** of Intel reports repeat unverified claims from public channels. The card says so,
+  but check a report before sharing it. When the report is off screen, or `MAP` is not
+  `AS SHOWN`, the board moves briefly to take the picture and then returns.
 - **Local use.** The server has no user accounts or access control. It binds to `127.0.0.1` by
   default; do not expose it to the internet.
 
@@ -386,6 +429,8 @@ web/js/                Front end as plain ES modules (no bundler)
   ais.js                 ship layer, ship card and coverage map
   cog.js                 in-browser reader for cloud-optimised GeoTIFFs and geographic images
   timelapse.js           time-lapse GIF builder
+  frames.js              draws any scene over an exact area (time-lapse and share cards)
+  cards.js               share cards: board capture, card drawing, before / after picks, dialog
 web/vendor/            MapLibre GL JS 5, satellite.js 5, gifenc, fonts and their licences (no CDN at runtime)
 docs/screenshots/      Images used in this README
 ```

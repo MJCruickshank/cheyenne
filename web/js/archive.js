@@ -156,11 +156,65 @@ async function searchNisar(con, aoi, t0, t1, signal) {
   return { records, truncated: (res.features || []).length >= 250 };
 }
 
-/** Geographic bounds of a NISAR browse image, from the KML published beside it. */
-export async function nisarBounds(rec) {
+/** Loads an image with CORS so its pixels can be read. */
+export function loadImage(url, signal) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const stop = () => { img.src = ''; reject(new DOMException('aborted', 'AbortError')); };
+    const done = () => signal && signal.removeEventListener('abort', stop);
+    if (signal) signal.addEventListener('abort', stop);
+    img.onload = () => { done(); resolve(img); };
+    img.onerror = () => { done(); reject(new Error('image unavailable')); };
+    img.src = url;
+  });
+}
+
+/**
+ * Geographic bounds of a NISAR browse image (a lat/lon grid). Validated products publish a
+ * KML with the bounds beside the browse image. For the earlier provisional release that KML
+ * sits behind the Earthdata login, so the bounds are worked out instead: the browse image is
+ * transparent outside the data, and its opaque extent matches the product footprint. That
+ * lands within about one browse pixel of the KML.
+ */
+export async function nisarBounds(rec, img = null, signal = undefined) {
   if (rec.props.bounds) return rec.props.bounds;
-  if (!rec.props.kmlUrl) throw new Error('no browse georeference');
-  const res = await fetch(rec.props.kmlUrl);
+  const kml = rec.props.kmlUrl;
+  if (kml && kml.includes('/BROWSE/')) {
+    try { return (rec.props.bounds = await kmlBounds(kml, signal)); }
+    catch (err) { if (signal && signal.aborted) throw err; }
+  }
+  if (!rec.props.browseUrl) throw new Error('no browse image');
+  img = img || await loadImage(rec.props.browseUrl, signal);
+  return (rec.props.bounds = boundsFromOpaque(img, rec.bbox));
+}
+
+function boundsFromOpaque(img, [w, s, e, n]) {
+  const W = img.naturalWidth, H = img.naturalHeight;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  g.drawImage(img, 0, 0);
+  const a = g.getImageData(0, 0, W, H).data;
+  let c0 = W, c1 = -1, r0 = H, r1 = -1;
+  for (let y = 0; y < H; y++) {
+    const row = y * W * 4;
+    let first = -1, last = -1;
+    for (let x = 0; x < W; x++) if (a[row + x * 4 + 3]) { first = x; break; }
+    if (first < 0) continue;
+    for (let x = W - 1; x >= first; x--) if (a[row + x * 4 + 3]) { last = x; break; }
+    if (y < r0) r0 = y;
+    r1 = y;
+    if (first < c0) c0 = first;
+    if (last > c1) c1 = last;
+  }
+  if (c1 < c0 || r1 < r0) throw new Error('browse image is empty');
+  const dx = (e - w) / (c1 + 1 - c0), dy = (n - s) / (r1 + 1 - r0);
+  return [w - c0 * dx, s - (H - r1 - 1) * dy, e + (W - c1 - 1) * dx, n + r0 * dy];
+}
+
+async function kmlBounds(url, signal) {
+  const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`browse KML: HTTP ${res.status}`);
   const text = await res.text();
   const nums = (/<coordinates>([^<]+)<\/coordinates>/.exec(text) || [])[1];
@@ -173,7 +227,6 @@ export async function nisarBounds(rec) {
     box = [tag('west'), tag('south'), tag('east'), tag('north')];
   }
   if (!box.every(Number.isFinite)) throw new Error('browse KML has no bounds');
-  rec.props.bounds = box;
   return box;
 }
 

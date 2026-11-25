@@ -57,6 +57,42 @@ const tileLon = (x, z) => (x / 2 ** z) * 360 - 180;
 const tileLat = (y, z) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / 2 ** z))) * 180) / Math.PI;
 
 async function renderTile(sources, z, x, y, signal) {
+  const out = await renderTileData(sources, z, x, y, signal);
+  const canvas = new OffscreenCanvas(TILE, TILE);
+  canvas.getContext('2d').putImageData(new ImageData(out, TILE, TILE), 0, 0);
+  return canvas.convertToBlob({ type: 'image/png' });
+}
+
+/**
+ * Draws `sources` over the Web Mercator box `box` ([w, s, e, n]) onto a W x H 2D context, at
+ * no more detail than `maxZoom`. Used for share cards; transparent where there is no data.
+ */
+export async function renderArea(g, sources, box, W, H, maxZoom = 18, signal) {
+  const x0f = (box[0] + 180) / 360, x1f = (box[2] + 180) / 360;
+  const y0f = (1 - mercY(box[3]) / Math.PI) / 2, y1f = (1 - mercY(box[1]) / Math.PI) / 2;
+  // Enough detail for the output size, but no deeper than the imagery holds or 40 tiles.
+  let z = Math.min(maxZoom, Math.max(0, Math.ceil(Math.log2(W / ((x1f - x0f) * TILE)))));
+  const span = (zz) => (Math.floor(x1f * 2 ** zz) - Math.floor(x0f * 2 ** zz) + 1) * (Math.floor(y1f * 2 ** zz) - Math.floor(y0f * 2 ** zz) + 1);
+  while (z > 0 && span(z) > 40) z--;
+  const n = 2 ** z;
+  const tx0 = Math.floor(x0f * n), tx1 = Math.floor(x1f * n), ty0 = Math.floor(y0f * n), ty1 = Math.floor(y1f * n);
+  const jobs = [];
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) jobs.push([tx, ty]);
+  const sx = W / ((x1f - x0f) * n * TILE), sy = H / ((y1f - y0f) * n * TILE);
+  const tile = new OffscreenCanvas(TILE, TILE), tg = tile.getContext('2d');
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(4, jobs.length) }, async () => {
+    while (next < jobs.length) {
+      const [tx, ty] = jobs[next++];
+      const data = await renderTileData(sources, z, ((tx % n) + n) % n, ty, signal);
+      tg.putImageData(new ImageData(data, TILE, TILE), 0, 0);
+      const dx = (tx * TILE - x0f * n * TILE) * sx, dy = (ty * TILE - y0f * n * TILE) * sy;
+      g.drawImage(tile, dx, dy, TILE * sx + 0.5, TILE * sy + 0.5);
+    }
+  }));
+}
+
+async function renderTileData(sources, z, x, y, signal) {
   const w = tileLon(x, z), e = tileLon(x + 1, z), n = tileLat(y, z), s = tileLat(y + 1, z);
   const out = new Uint8ClampedArray(TILE * TILE * 4);
   for (const src of sources) {
@@ -70,9 +106,7 @@ async function renderTile(sources, z, x, y, signal) {
       console.warn('raster:', src.url, err.message);
     }
   }
-  const canvas = new OffscreenCanvas(TILE, TILE);
-  canvas.getContext('2d').putImageData(new ImageData(out, TILE, TILE), 0, 0);
-  return canvas.convertToBlob({ type: 'image/png' });
+  return out;
 }
 
 /** Geographic position of every GRID-th output pixel centre, as [lon, lat] pairs. */
